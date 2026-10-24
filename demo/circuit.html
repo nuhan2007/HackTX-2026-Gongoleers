@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Circuits Lab 2: Node Voltage Analysis</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; background: #fbfaf7; margin: 0; color: #1d1d1f; }
+      main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+      .problem { background: #fff; border: 1px solid #e2ded3; border-radius: 8px; padding: 20px 24px; }
+      svg { width: 100%; max-width: 520px; display: block; margin: 12px auto; }
+      svg text { font: 14px system-ui, sans-serif; fill: #1d1d1f; }
+      input { font: 16px ui-monospace, monospace; padding: 6px 8px; width: 120px; }
+      button { font: 600 14px system-ui; padding: 7px 14px; border-radius: 6px; border: 1px solid #2d6a4f; background: #2d6a4f; color: #fff; cursor: pointer; }
+      .feedback { margin-top: 10px; font-weight: 600; min-height: 22px; }
+      .incorrect { color: #b3261e; }
+      .correct { color: #1b7f3b; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>EE 101 · Lab 2</h1>
+      <div class="problem" id="problem-2" data-question="Problem 2">
+        <h2>Problem 2</h2>
+        <p>
+          A 12 V source connects through R1 = 4 kΩ to node A. From node A, R2 = 6 kΩ and R3 = 12 kΩ each connect to ground. Using node voltage
+          analysis, find the voltage at node A (in volts).
+        </p>
+        <svg viewBox="0 0 520 220" role="img" aria-label="Circuit: 12 V source, R1 to node A, R2 and R3 from node A to ground">
+          <g stroke="#1d1d1f" stroke-width="2" fill="none">
+            <path d="M60 40 V180 H460 M60 40 H130" />
+            <path d="M130 40 l8 -10 l16 20 l16 -20 l16 20 l16 -20 l16 20 l8 -10 H300" />
+            <path d="M300 40 H400 M300 40 V70 M400 40 V70" />
+            <path d="M300 70 l-10 8 l20 16 l-20 16 l20 16 l-20 16 l10 8 V180" />
+            <path d="M400 70 l-10 8 l20 16 l-20 16 l20 16 l-20 16 l10 8 V180" />
+            <circle cx="60" cy="110" r="18" />
+          </g>
+          <circle cx="300" cy="40" r="5" fill="#1d1d1f" />
+          <text x="40" y="104">+</text><text x="40" y="128">−</text>
+          <text x="8" y="115">12 V</text>
+          <text x="180" y="22">R1 = 4 kΩ</text>
+          <text x="308" y="30">A</text>
+          <text x="318" y="128">R2 = 6 kΩ</text>
+          <text x="418" y="128">R3 = 12 kΩ</text>
+          <text x="250" y="205">ground</text>
+        </svg>
+        <label>V<sub>A</sub> = <input id="va" /> V</label>
+        <button id="check">Submit</button>
+        <div class="feedback" aria-live="polite"></div>
+      </div>
+    </main>
+    <script>
+      const fb = document.querySelector('.feedback');
+      document.getElementById('check').addEventListener('click', () => {
+        const v = parseFloat(document.getElementById('va').value);
+        fb.textContent = '';
+        setTimeout(() => {
+          const ok = Math.abs(v - 6) < 0.05;
+          fb.className = 'feedback ' + (ok ? 'correct' : 'incorrect');
+          fb.textContent = ok ? 'Correct!' : 'Not quite. Try again.';
+        }, 250);
+      });
+    </script>
+  </body>
+</html>

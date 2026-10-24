@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+*.local
+label-logs/
+extension/public/mediapipe/

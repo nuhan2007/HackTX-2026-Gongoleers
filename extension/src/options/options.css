@@ -1,0 +1,19 @@
+.page { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+header { margin-bottom: 16px; }
+section label { margin-bottom: 10px; }
+.status.ok { border-color: var(--good); }
+.status.todo { border-color: var(--warn); }
+.status p { margin: 0; }
+fieldset { border: none; padding: 0; margin: 8px 0 0; }
+fieldset:disabled { opacity: 0.5; }
+.slider { display: flex; flex-direction: column; gap: 4px; }
+.slider input { width: 100%; accent-color: var(--brand); }
+.cam-row { display: grid; grid-template-columns: minmax(0, 240px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 560px) { .cam-row { grid-template-columns: 1fr; } }
+.cam { width: 100%; aspect-ratio: 4 / 3; background: var(--surface-2); border-radius: 10px; object-fit: cover; transform: scaleX(-1); }
+.cam.off { opacity: 0.4; }
+.meter-track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.meter-fill { height: 100%; background: var(--chart-line); border-radius: 4px; }
+kbd { font: 12px ui-monospace, monospace; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
+code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+input[type='checkbox'] { accent-color: var(--brand); }

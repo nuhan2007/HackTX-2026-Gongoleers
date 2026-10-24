@@ -1,0 +1,116 @@
+:root {
+  --bg: #f7f6fc;
+  --surface: #ffffff;
+  --surface-2: #f1effb;
+  --border: #e3e0f3;
+  --ink: #1f1d2b;
+  --ink-2: #57546b;
+  --ink-3: #8a879c;
+  --brand: #6c5ce7;
+  --brand-ink: #ffffff;
+  --brand-soft: #ece9fd;
+  --chart-line: #6c5ce7; /* validated: L band + 3:1 vs #fff */
+  --chart-grid: #ebe9f3;
+  --warn: #b35c00;
+  --bad: #c0392b;
+  --good: #1e8e5a;
+  --radius: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #14131c;
+    --surface: #1c1b26;
+    --surface-2: #252433;
+    --border: #33314a;
+    --ink: #eeedf5;
+    --ink-2: #b5b2c9;
+    --ink-3: #8a879c;
+    --brand: #8e7ff0;
+    --brand-ink: #14131c;
+    --brand-soft: #2c2945;
+    --chart-line: #8e7ff0; /* validated against #1c1b26 */
+    --chart-grid: #2b2a3a;
+    --warn: #f0a04b;
+    --bad: #ff7b6b;
+    --good: #4cc98a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #14131c;
+  --surface: #1c1b26;
+  --surface-2: #252433;
+  --border: #33314a;
+  --ink: #eeedf5;
+  --ink-2: #b5b2c9;
+  --ink-3: #8a879c;
+  --brand: #8e7ff0;
+  --brand-ink: #14131c;
+  --brand-soft: #2c2945;
+  --chart-line: #8e7ff0;
+  --chart-grid: #2b2a3a;
+  --warn: #f0a04b;
+  --bad: #ff7b6b;
+  --good: #4cc98a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+h1, h2, h3 { margin: 0 0 8px; line-height: 1.2; }
+h1 { font-size: 20px; }
+h2 { font-size: 16px; }
+h3 { font-size: 14px; }
+p { margin: 0 0 8px; }
+a { color: var(--brand); }
+.muted { color: var(--ink-2); }
+.small { font-size: 12px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.spacer { flex: 1; }
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+  padding: 6px 14px;
+}
+button:hover:not(:disabled) { border-color: var(--brand); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+button.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); font-weight: 600; }
+button.ghost { background: none; border-color: transparent; color: var(--ink-2); }
+input[type='text'], input[type='password'], textarea {
+  font: inherit;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+textarea { resize: vertical; min-height: 44px; }
+label { display: block; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
+  background: var(--brand-soft); color: var(--ink);
+}
+.chip.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.chip.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); }
+.chip.good { background: color-mix(in srgb, var(--good) 18%, transparent); }
+.error { color: var(--bad); }

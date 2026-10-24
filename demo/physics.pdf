@@ -1,0 +1,50 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 856 >>
+stream
+BT
+/F2 18 Tf 1 0 0 1 72 740 Tm (Physics 1 - Problem Set 5: Energy) Tj
+/F1 12 Tf 1 0 0 1 72 712 Tm () Tj
+/F2 13 Tf 1 0 0 1 72 690 Tm (Problem 2.) Tj
+/F1 12 Tf 1 0 0 1 72 667 Tm (A 2.0 kg block starts from rest at the top of a frictionless ramp) Tj
+/F1 12 Tf 1 0 0 1 72 645 Tm (that is 5.0 m high. It slides down the ramp and onto a level) Tj
+/F1 12 Tf 1 0 0 1 72 623 Tm (floor. What is the speed of the block at the bottom of the ramp?) Tj
+/F1 12 Tf 1 0 0 1 72 601 Tm (Use g = 9.8 m/s^2.) Tj
+/F1 12 Tf 1 0 0 1 72 579 Tm () Tj
+/F1 12 Tf 1 0 0 1 72 557 Tm (Answer: v = ______________ m/s) Tj
+/F1 12 Tf 1 0 0 1 72 535 Tm () Tj
+/F2 13 Tf 1 0 0 1 72 513 Tm (Problem 3.) Tj
+/F1 12 Tf 1 0 0 1 72 490 Tm (The same block then hits a spring \(k = 400 N/m\) on the floor.) Tj
+/F1 12 Tf 1 0 0 1 72 468 Tm (How far does the spring compress before the block stops?) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000001158 00000 n 
+0000001230 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1301
+%%EOF
