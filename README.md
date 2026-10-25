@@ -2,17 +2,16 @@
 
 > It notices you're stuck before you give up, asks the question that gets you moving, and never gives you the answer.
 
-**HackTX 2026 · Team Gongoleers** · Tracks: Best Overall, MLH Best Use of Gemini, SerpApi, Best Pitch
+**HackTX 2026 · Team Gongoleers** · Tracks: Best Overall, SerpApi, Best Pitch
 
-Gongo is a Chrome extension (Manifest V3). It fuses three on-device signals into a live **confusion score**:
+Gongo is a Chrome extension (Manifest V3). It fuses two on-device signals into a live **confusion score**. It never tries to judge whether an answer is right or wrong:
 
-- **page content**: "Incorrect" after a submit, resubmits, the same error repeating
-- **activity**: re-reading, idling, backspace bursts, tab-hopping
-- **face**: brow furrow and head tilt, from the webcam via MediaPipe
+- **page activity**: re-reading, idling, long time on one question, backspace bursts, rage clicks, tab-hopping
+- **face**: brow furrow, squint and head tilt, from the webcam via MediaPipe (even mild, held expressions count)
 
-When the score stays high, a small sprite offers help. The **Socratic tutor** in Chrome's side panel (powered by Gemini) then asks one guiding question at a time. A private answer key plus a two-layer leak guard keeps it from ever revealing the answer. If the student doesn't know a prerequisite, **SerpApi + Gemini** find the exact minute of a YouTube video that explains the concept.
+When the score stays high, a purple owl pops up in the corner. Click **Let's do it** and Gongo **looks at the tab, Copilot-style**: an image of the screen, the page text and math, the answer fields, any handwriting or drawings, and a log of what the student typed, submitted and got back. A help card right next to the owl then shows an insight into what they seem stuck on plus 2–3 "try this next" suggestions. Nothing is asked of the student: they can just read it, ask for another angle, watch a short video, or say it helped. The × (or Esc) closes the owl at any point. The same **Socratic tutor** (powered by OpenAI) is also available in Chrome's side panel. A private answer key plus a two-layer leak guard keeps it from ever revealing the answer. If the student doesn't know a prerequisite, **SerpApi + OpenAI** pick a YouTube video, and the chapter or timestamp, that explains the concept.
 
-There is no backend. The extension calls the Gemini and SerpApi APIs directly from its service worker.
+There is no backend. The extension calls the OpenAI and SerpApi APIs directly from its service worker.
 
 ---
 
@@ -26,7 +25,7 @@ npm run build        # → extension/dist
 
 1. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and pick `extension/dist`.
 2. The setup page opens automatically:
-   - paste your **Gemini** and **SerpApi** keys (stored only in `chrome.storage.local`)
+   - paste your **OpenAI** and **SerpApi** keys (stored only in `chrome.storage.local`)
    - **Allow camera**
    - **Calibrate (10 s)**
 3. Click the Gongo toolbar icon to open the side panel.
@@ -52,14 +51,15 @@ Both evals write `src/shared/evalResults.json`, which the **Stats** tab shows. R
 ```
 Content script (every frame)        Offscreen doc (camera, always on)
   ContentSignals + ActivityTracker    MediaPipe Face Landmarker @5 fps → averaged numbers
-  Sprite nudge (closed Shadow DOM)                  │
+  Owl + help card (closed Shadow DOM)               │
             │ signals / 1 s                         │
             ▼                                       ▼
-Service worker ── ConfusionEngine (noisy-OR per channel, 0.5/0.3/0.2 fusion, EMA)
+Service worker ── face smoothing (rolling median + EMA), baseline z-scores
+               ── ConfusionEngine (noisy-OR per channel, per-channel EMA, noisy-OR across activity and face, score EMA)
                ── TriggerMachine (threshold × duration, hysteresis, cooldown)
                ── state persisted to chrome.storage.session every tick
                ── tutor: solver (hidden) → tutor turn → leak guard → side panel
-               ── video: concept → SerpApi YouTube → Gemini watches → timestamp
+               ── video: concept → SerpApi YouTube → OpenAI picks from titles/chapters → timestamp
 ```
 
 | Piece | Where |
@@ -70,38 +70,45 @@ Service worker ── ConfusionEngine (noisy-OR per channel, 0.5/0.3/0.2 fusion,
 | Page-content signals | `src/content/contentSignals.ts` |
 | Activity signals | `src/content/activityTracker.ts`, `src/background/tabTracker.ts` |
 | Face features | `src/shared/face.ts` (MediaPipe), `src/shared/faceSignals.ts` (baseline z-scores) |
-| Gemini calls (all structured JSON) | `src/ai/*` |
+| OpenAI calls (all strict structured JSON) | `src/ai/*` |
 | Leak guard | `src/leak/deterministic.ts`, `src/leak/guard.ts` |
 | SerpApi + cache | `src/serp/*` |
-| Side panel (consent capture, chat, video, live timeline, stats) | `src/sidepanel/*` |
+| Owl + inline help card (hint, suggestions, reply, video, understanding check) | `src/content/sprite/Sprite.tsx` |
+| "Look at the tab": screen image + per-frame text, TeX, fields, drawings | `src/background/tabReader.ts`, `src/content/pageContext.ts` |
+| Work log (edits, submits, feedback, drawing strokes) | `src/content/workLog.ts` |
+| Side panel (chat, video, live timeline, stats) | `src/sidepanel/*` |
 | Setup page (keys, camera, calibration, thresholds, dev tools) | `src/options/*` |
 
 ### Never leaking the answer
-1. **Solver (hidden).** Gemini solves the cropped problem into `{finalAnswer, keySteps, conceptTags, misconceptions, answerKeyPhrases}`. This lives only in `chrome.storage.session`, with a 2 h TTL, and is never messaged to the UI.
-2. **Tutor turn.** Gemini gets the answer key as private context and writes one guiding question at hint level 1–3. The level adapts to the student's replies.
+1. **Solver (hidden).** OpenAI reads the tab (screen image, drawings and text) and solves the problem into `{finalAnswer, keySteps, conceptTags, misconceptions, answerKeyPhrases, studentWork}`. `studentWork` describes what the student did and where it likely went wrong. This lives only in `chrome.storage.session`, with a 2 h TTL, and is never messaged to the UI.
+2. **Tutor turn.** OpenAI gets the answer key as private context and writes one guiding question at hint level 1–3. The level adapts to the student's replies.
 3. **Leak check** before anything is shown:
    - a **deterministic** matcher: equivalent numbers (0.5 = 1/2 = 50%), rounded values, the answer string, MC letters and option endorsements, solution code lines and identifiers, key phrases
-   - then a **Gemini judge**
+   - then a **LLM judge**
    - A failed draft is regenerated up to 2×; after that, a safe generic question is shown. If the judge errors, the guard fails closed.
 
 ### Privacy and fairness
 - Camera frames are processed on-device and never leave it. Only averaged numbers reach the service worker.
-- Nothing is sent to Gemini until the student crops the problem, previews exactly what will be sent (outside the crop is blurred by default), and clicks **Send**.
-- Facial expressions vary across people and cultures, so the face channel has the **lowest weight (20%)**. Page content carries the score.
+- Nothing is sent to OpenAI until the student asks for help (**Let's do it** on the owl, or **I'm stuck** in the side panel).
+- Then Gongo reads only that one tab: a screen image, page text and TeX, answer fields, canvas drawings, and a short work log of edits, submits and feedback. The work log records edits as before → after, not raw keystrokes. Password and payment fields are never read.
+- Facial expressions vary across people and cultures, so the face channel can contribute less than page activity (gain 0.65 vs 0.8), and either one can raise the score on its own.
 - **Looking away or down** (e.g. writing on paper) is never counted as confusion; it only pauses the idle timer.
 - Metrics and session summaries are numbers and timings, stored only in `chrome.storage.local`.
 
 ### Known limitations
 - The hidden solution is in `chrome.storage.session`. Content scripts and web pages can't read it, but a determined student could with extension DevTools. The post-hackathon fix is a server-side solver.
-- `chrome.sidePanel.open()` from the sprite relies on the click's user gesture. If Chrome refuses, the sprite tells the student to click the toolbar icon.
-- YouTube video input to Gemini depends on the video being public. Gongo falls back to choosing from titles, descriptions and chapters.
+- The owl lives in the page, so it can't appear on Chrome's own pages (`chrome://`, the Web Store, new-tab), the PDF viewer, or `file://` pages unless you enable "Allow access to file URLs". There the toolbar badge shows **HELP**, the side panel explains why, and "I'm stuck" in the side panel still works.
+- Chrome won't capture some pages (`chrome://`, the Web Store). On those, Gongo uses the page text alone or explains that it can't see the page.
+- Drawings on cross-origin canvases can't be snapshotted directly, but they still appear in the screen image.
+- OpenAI can't watch videos, so the video moment comes from SerpApi's titles, descriptions and chapters. It's only as precise as those are.
+- The default model is `gpt-6-luna`; change it on the options page (it needs vision and structured outputs). Check OpenAI's model list if it's rejected.
 - The face model can't detect hands, so "hand on face" isn't a signal.
 - The sprite is a placeholder SVG; swap in a free asset pack via `public/sprite/`.
 
 ---
 
 ## Before demo day
-- [ ] Turn on **Demo mode** (threshold 50, 10 s, cooldown 30 s). Turn on Dev mode only off-stage (it shows "Force trigger").
+- [ ] Turn on **Demo mode** (threshold 30, 8 s, cooldown 30 s; the normal default is 35 for 25 s). Turn on Dev mode only off-stage (it shows "Force trigger").
 - [ ] Run "I don't know at all" once for each demo concept, then **Export video cache** on the options page and save it over `extension/src/serp/demoCache.json`. Rebuild.
 - [ ] Collect ≥10 label-mode sessions (Alt+Shift+S when genuinely stuck), export them to `label-logs/`, then run `npm run evaluate`.
 - [ ] Run `npm run leak-eval`, rebuild, and check the Stats tab.

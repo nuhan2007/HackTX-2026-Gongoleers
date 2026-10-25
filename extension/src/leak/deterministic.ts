@@ -1,4 +1,4 @@
-// Deterministic answer-leak check: runs before the Gemini judge and catches the obvious
+// Deterministic answer-leak check: runs before the LLM judge and catches the obvious
 // cases (equivalent numbers, the answer string, solution code lines, MC letters, key phrases).
 import type { SolverResult } from '../shared/types';
 

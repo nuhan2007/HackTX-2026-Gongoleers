@@ -15,13 +15,13 @@ function download(name: string, data: unknown) {
 
 export function Options() {
   const [s, setS] = useState<Settings | null>(null);
-  const [keys, setKeys] = useState({ geminiKey: '', serpKey: '', model: '' });
+  const [keys, setKeys] = useState({ openaiKey: '', serpKey: '', model: '' });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     getSettings().then((x) => {
       setS(x);
-      setKeys({ geminiKey: x.geminiKey, serpKey: x.serpKey, model: x.model });
+      setKeys({ openaiKey: x.openaiKey, serpKey: x.serpKey, model: x.model });
     });
     onSettingsChanged(setS);
   }, []);
@@ -52,15 +52,15 @@ export function Options() {
       <section className="card">
         <h2>1. API keys</h2>
         <p className="small muted">
-          Keys are stored only in this browser (<code>chrome.storage.local</code>) and sent only to Google's Gemini API and SerpApi. They're never
+          Keys are stored only in this browser (<code>chrome.storage.local</code>) and sent only to OpenAI's API and SerpApi. They're never
           part of the code or the repo.
         </p>
         <label>
-          Gemini API key{' '}
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="small">
+          OpenAI API key{' '}
+          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="small">
             get one
           </a>
-          <input type="password" value={keys.geminiKey} onChange={(e) => setKeys({ ...keys, geminiKey: e.target.value.trim() })} autoComplete="off" />
+          <input type="password" value={keys.openaiKey} onChange={(e) => setKeys({ ...keys, openaiKey: e.target.value.trim() })} autoComplete="off" />
         </label>
         <label>
           SerpApi key{' '}
@@ -70,7 +70,7 @@ export function Options() {
           <input type="password" value={keys.serpKey} onChange={(e) => setKeys({ ...keys, serpKey: e.target.value.trim() })} autoComplete="off" />
         </label>
         <label>
-          Gemini model
+          OpenAI model (needs vision + structured outputs)
           <input type="text" value={keys.model} onChange={(e) => setKeys({ ...keys, model: e.target.value.trim() })} />
         </label>
         <div className="row">
@@ -100,7 +100,7 @@ export function Options() {
           Demo mode (threshold {DEMO_TRIGGER.threshold}, {DEMO_TRIGGER.durationSec}s, cooldown {DEMO_TRIGGER.cooldownSec}s)
         </label>
         <fieldset disabled={s.demoMode}>
-          <Slider label="Confusion threshold" value={s.threshold} min={30} max={90} unit="" onChange={(threshold) => set({ threshold })} />
+          <Slider label="Confusion threshold" value={s.threshold} min={15} max={80} unit="" onChange={(threshold) => set({ threshold })} />
           <Slider label="Stuck for at least" value={s.durationSec} min={10} max={180} unit="s" onChange={(durationSec) => set({ durationSec })} />
           <Slider label="Quiet time after a nudge" value={s.cooldownSec} min={30} max={900} step={30} unit="s" onChange={(cooldownSec) => set({ cooldownSec })} />
         </fieldset>
@@ -115,8 +115,12 @@ export function Options() {
         <h2>Privacy & fairness</h2>
         <ul className="small">
           <li>Camera frames are analyzed on this device and never leave it. Only numbers (like "brow furrow: 0.4") are used.</li>
-          <li>Nothing about your page is sent until you click <em>Send</em> on a preview you've cropped yourself.</li>
-          <li>Facial expressions vary across people and cultures, so the face counts for only 20% of the score. What happens on the page (wrong answers, repeated errors) carries most of it.</li>
+          <li>
+            Nothing about your page is sent until you ask for help (<em>Let's do it</em> or <em>I'm stuck</em>). Then Gongo looks at that one tab:
+            an image of what's on screen, the page text, your answer fields, your drawings, and a short log of what you typed and submitted. Password
+            fields are never read.
+          </li>
+          <li>Facial expressions vary across people and cultures, so the face contributes a bit less than page activity. What you do on the page (idling, re-reading, backspacing) carries the rest.</li>
           <li>Looking away or down (for example, writing on paper) never counts as confusion. It just pauses the idle timer.</li>
           <li>Session summaries and metrics are stored only in this browser.</li>
         </ul>

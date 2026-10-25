@@ -1,10 +1,10 @@
 // Service worker: routes messages, runs the engine tick, manages the offscreen camera doc.
 // All long-lived state is in chrome.storage so an MV3 shutdown loses nothing important.
-import { GeminiError } from '../ai/geminiClient';
-import { FACE_STALE_MS, GEMINI_CALLS_PER_MIN, PAGE_STALE_MS } from '../shared/constants';
-import { toSignals } from '../shared/faceSignals';
-import type { Msg, PanelState } from '../shared/messages';
-import { getSettings, onSettingsChanged, readiness, triggerConfig, updateSettings, type Settings } from '../shared/settings';
+import { OpenAIError } from '../ai/openaiClient';
+import { AI_CALLS_PER_MIN, FACE_STALE_MS, PAGE_STALE_MS } from '../shared/constants';
+import { FaceSmoother, toSignals } from '../shared/faceSignals';
+import type { HelpStage, Msg, PanelState } from '../shared/messages';
+import { getSettings, onSettingsChanged, readiness, triggerConfig, updateSettings, validModel, type Settings } from '../shared/settings';
 import type { EngineOutput, FaceReading, PageSignals, Signal } from '../shared/types';
 import { step } from './confusionEngine';
 import { EngineStore } from './engineStore';
@@ -13,6 +13,7 @@ import { getStats } from './metrics';
 import { RateLimiter, RateLimitError } from './rateLimiter';
 import { startTabTracker, tabSignals } from './tabTracker';
 import { enterCooldown, forceConfused, stepTrigger } from './triggerMachine';
+import { captureTabImage, readTab } from './tabReader';
 import * as tutor from './tutorService';
 import { SerpError } from '../serp/youtube';
 
@@ -22,7 +23,7 @@ const TRIGGER_MEMORY_MS = 10 * 60_000;
 
 const store = new EngineStore(chrome.storage.session);
 const logger = new LabelLogger();
-const limiter = new RateLimiter(GEMINI_CALLS_PER_MIN);
+const limiter = new RateLimiter(AI_CALLS_PER_MIN);
 
 let settings: Settings;
 const settingsReady = getSettings().then((s) => (settings = s));
@@ -31,8 +32,9 @@ const settingsReady = getSettings().then((s) => (settings = s));
 const frames = new Map<number, Map<number, { signals: PageSignals; at: number }>>();
 let face: { reading: FaceReading; at: number } | null = null;
 let cameraError: string | null = null;
+const faceSmoother = new FaceSmoother();
 let activeTabId: number | null = null;
-let lastOutput: EngineOutput = { score: 0, channels: { content: 0, activity: 0, face: 0 }, topContributors: [] };
+let lastOutput: EngineOutput = { score: 0, channels: { activity: 0, face: 0 }, topContributors: [] };
 let lastTickAt = 0;
 let ticking = false;
 // Starts at boot so a freshly woken worker waits for the existing camera doc to report in.
@@ -54,7 +56,7 @@ async function setRuntime(patch: Partial<Runtime>) {
 }
 
 const cameraOk = () => !!face && Date.now() - face.at < FACE_STALE_MS * 2;
-const geminiCtx = () => ({ apiKey: settings.geminiKey, model: settings.model, limiter });
+const aiCtx = () => ({ apiKey: settings.openaiKey, model: validModel(settings.model), limiter });
 
 // ---------------- offscreen camera ----------------
 
@@ -82,9 +84,13 @@ async function closeOffscreen(): Promise<void> {
   if (await hasOffscreen()) await chrome.offscreen.closeDocument().catch(() => {});
 }
 
+let fallbackActive = false;
+
 async function updateBadge(): Promise<void> {
   const { ready } = readiness(settings);
-  const [text, color, title] = !settings.enabled
+  const [text, color, title] = fallbackActive && settings.enabled
+    ? ['HELP', '#6c5ce7', 'Gongo thinks you might be stuck. Click to open the helper.']
+    : !settings.enabled
     ? ['off', '#636e72', 'Gongo is off']
     : !ready
       ? ['!', '#e17055', 'Gongo: finish setup on the options page']
@@ -109,20 +115,56 @@ function mergedPage(tabId: number | null, now: number): PageSignals | null {
     for (const s of lists.flat()) if (!best.has(s.id) || best.get(s.id)!.value < s.value) best.set(s.id, s);
     return [...best.values()];
   };
-  const withContent = fresh.find((f) => f.content.length) ?? fresh[0];
   return {
-    content: strongest(fresh.map((f) => f.content)),
     activity: strongest(fresh.map((f) => f.activity)),
     idleMs: Math.min(...fresh.map((f) => f.idleMs)),
     dwellMs: Math.min(...fresh.map((f) => f.dwellMs)),
-    questionLabel: withContent.questionLabel,
+    questionLabel: fresh[0].questionLabel,
   };
 }
 
-async function showNudge(show: boolean, reasons: string[] = []) {
-  if (activeTabId === null) return;
-  chrome.tabs.sendMessage(activeTabId, { type: 'nudge', show, reasons } satisfies Msg, { frameId: 0 }).catch(() => {});
+/** Tabs that were open before the extension (re)loaded have no content script; add it on demand. */
+async function injectContentScript(tabId: number): Promise<void> {
+  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js;
+  if (!files?.length) return;
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files }).catch(() => {});
 }
+
+/** The tab the student is actually looking at (the tracked id can go stale across windows). */
+async function visibleTabId(): Promise<number | null> {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  if (tab?.id !== undefined && !tab.url?.startsWith('chrome-extension://')) return tab.id;
+  return activeTabId;
+}
+
+/** Tells the page's owl to show/hide. Returns false when no owl on that page could be reached. */
+async function showNudge(show: boolean, reasons: string[] = []): Promise<boolean> {
+  if (!show && fallbackActive) {
+    fallbackActive = false;
+    await updateBadge();
+  }
+  const tabId = await visibleTabId();
+  if (tabId === null) return false;
+  const msg = { type: 'nudge', show, reasons } satisfies Msg;
+  try {
+    await chrome.tabs.sendMessage(tabId, msg, { frameId: 0 });
+    return true;
+  } catch {
+    // Nobody listening: the page predates the extension. Inject, then try once more.
+    if (!show) return false;
+    await injectContentScript(tabId);
+    await new Promise((r) => setTimeout(r, 400));
+    return chrome.tabs.sendMessage(tabId, msg, { frameId: 0 }).then(() => true, () => false);
+  }
+}
+
+/** Last resort for pages that can't hold an owl (PDF viewer, chrome://, file:// without access). */
+async function showFallbackNudge(): Promise<void> {
+  fallbackActive = true;
+  await updateBadge();
+}
+
+let lastNudgeSentAt = 0;
 
 async function tick(): Promise<void> {
   const now = Date.now();
@@ -161,14 +203,19 @@ async function tick(): Promise<void> {
 
     if (fired) {
       await setRuntime({ lastFiredAt: now });
-      await showNudge(true, output.topContributors);
+      lastNudgeSentAt = now;
+      if (!(await showNudge(true, output.topContributors))) await showFallbackNudge();
+    } else if (trigger.phase === 'confused' && !runtime.sessionActive && now - lastNudgeSentAt > 4000) {
+      // Keep offering while confused: covers a lost message or switching to another tab.
+      lastNudgeSentAt = now;
+      if (!(await showNudge(true, output.topContributors))) await showFallbackNudge();
     } else if (prevPhase === 'confused' && trigger.phase !== 'confused') {
       await showNudge(false);
     }
 
     if (settings.labelMode) {
       const signals: Record<string, number> = {};
-      for (const s of [...(page?.content ?? []), ...(page?.activity ?? []), ...(face?.reading.signals ?? [])])
+      for (const s of [...(page?.activity ?? []), ...(face?.reading.signals ?? [])])
         signals[s.id] = Math.round(s.value * 100) / 100;
       logger.tick({ t: now, score: output.score, channels: output.channels, signals, fired });
     }
@@ -183,10 +230,39 @@ async function acknowledgeNudge(snooze: boolean) {
   if (snooze) await updateSettings({ snoozedUntil: Date.now() + SNOOZE_MS });
 }
 
+// ---------------- help ----------------
+
+/**
+ * "Let's do it" / "I'm stuck": look at the tab (image + every frame's text, fields, work log and
+ * drawings), solve it privately, and return the first guided hint. From the owl, the owl is
+ * hidden for the capture and told how far along we are.
+ */
+async function startHelp(fromTab: chrome.tabs.Tab | null) {
+  await Promise.all([settingsReady, runtimeReady]);
+  const tab = fromTab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (!tab?.id) throw new Error("There's no tab for me to look at.");
+  const progress = (stage: HelpStage) => {
+    if (fromTab?.id) chrome.tabs.sendMessage(fromTab.id, { type: 'help-progress', stage } satisfies Msg, { frameId: 0 }).catch(() => {});
+  };
+
+  const tabImage = await captureTabImage(tab.windowId);
+  progress('reading');
+  const context = await readTab(tab.id, [...(frames.get(tab.id)?.keys() ?? [])]);
+  if (!tabImage && !context) throw new Error("Chrome doesn't let me look at this kind of page.");
+  progress('thinking');
+
+  const triggeredAt = runtime.lastFiredAt && Date.now() - runtime.lastFiredAt < TRIGGER_MEMORY_MS ? runtime.lastFiredAt : null;
+  const r = await tutor.startSession(aiCtx(), { tabImage, context, stuckReasons: lastOutput.topContributors }, triggeredAt);
+  if (r.sessionId) await setRuntime({ sessionActive: r.sessionId, lastFiredAt: null });
+  // Asked from the side panel: the owl's nudge is no longer needed.
+  if (!fromTab) await showNudge(false);
+  return r;
+}
+
 // ---------------- messages ----------------
 
 function friendly(e: unknown): string {
-  if (e instanceof GeminiError || e instanceof SerpError || e instanceof RateLimitError) return e.message;
+  if (e instanceof OpenAIError || e instanceof SerpError || e instanceof RateLimitError) return e.message;
   if (e instanceof Error) return e.message;
   return 'Something went wrong.';
 }
@@ -202,6 +278,7 @@ async function panelState(): Promise<PanelState> {
     enabled: settings.enabled,
     cameraOk: cameraOk(),
     cameraError,
+    pageVisible: mergedPage(await visibleTabId(), Date.now()) !== null,
     phase: trigger.phase,
     output: lastOutput,
     timeline: engine.timeline,
@@ -222,18 +299,21 @@ function handle(msg: Msg, sender: chrome.runtime.MessageSender): Promise<unknown
       if (tabId === activeTabId) void tick();
       return;
     }
-    case 'face-reading':
+    case 'face-reading': {
+      // Smooth the trend; a missing face resets it so stale values don't linger.
+      const smooth = msg.raw ? faceSmoother.push(msg.raw) : (faceSmoother.reset(), null);
       face = {
         reading: {
           facePresent: msg.facePresent,
           gazeAway: msg.gazeAway,
-          signals: msg.raw && settings?.calibration ? toSignals(msg.raw, settings.calibration) : [],
+          signals: smooth && settings?.calibration ? toSignals(smooth, settings.calibration) : [],
         },
         at: Date.now(),
       };
       cameraError = null;
       void tick();
       return;
+    }
     case 'camera-status':
       cameraError = msg.ok ? null : msg.error;
       if (!msg.ok) face = null;
@@ -251,31 +331,14 @@ function handle(msg: Msg, sender: chrome.runtime.MessageSender): Promise<unknown
         await setRuntime({ lastFiredAt: Date.now() });
         await showNudge(true, lastOutput.topContributors.length ? lastOutput.topContributors : ['(forced by dev mode)']);
       })();
-    case 'capture-tab':
-      return chrome.tabs
-        .captureVisibleTab({ format: 'jpeg', quality: 90 })
-        .then((dataUrl) => ({ image: dataUrl }))
-        .catch((e) => ({ error: `Couldn't capture this tab: ${friendly(e)}` }));
-    case 'page-context':
-      return (async () => {
-        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-        if (!tab?.id) return null;
-        return chrome.tabs.sendMessage(tab.id, { type: 'get-page-context' } satisfies Msg, { frameId: 0 }).catch(() => null);
-      })();
-    case 'start-session':
-      return (async () => {
-        await settingsReady;
-        const r = await tutor.startSession(geminiCtx(), msg.image, msg.context, runtime.lastFiredAt && Date.now() - runtime.lastFiredAt < TRIGGER_MEMORY_MS ? runtime.lastFiredAt : null);
-        if (r.sessionId) await setRuntime({ sessionActive: r.sessionId, lastFiredAt: null });
-        await showNudge(false);
-        return r;
-      })();
+    case 'start-help':
+      return startHelp(sender.tab ?? null);
     case 'tutor-turn':
-      return tutor.tutorTurn(geminiCtx(), msg.sessionId, msg.action, msg.text);
+      return tutor.tutorTurn(aiCtx(), msg.sessionId, msg.action, msg.text);
     case 'check-understanding':
-      return tutor.checkUnderstanding(geminiCtx(), msg.sessionId, msg.text);
+      return tutor.checkUnderstanding(aiCtx(), msg.sessionId, msg.text);
     case 'find-video':
-      return tutor.findVideo(geminiCtx(), settings.serpKey, msg.sessionId);
+      return tutor.findVideo(aiCtx(), settings.serpKey, msg.sessionId);
     case 'end-session':
       return (async () => {
         const summary = await tutor.endSession(msg.sessionId, msg.solved);
@@ -297,17 +360,6 @@ function handle(msg: Msg, sender: chrome.runtime.MessageSender): Promise<unknown
 }
 
 chrome.runtime.onMessage.addListener((msg: Msg, sender, reply) => {
-  if (msg.type === 'open-panel') {
-    // sidePanel.open must run synchronously inside the click's user gesture.
-    const tabId = sender.tab?.id;
-    if (tabId === undefined) return false;
-    chrome.sidePanel
-      .open({ tabId })
-      .then(() => reply(true))
-      .catch(() => reply(false));
-    void acknowledgeNudge(false);
-    return true;
-  }
   const p = handle(msg, sender);
   if (!p) return false;
   p.then(reply, (e) => reply({ error: friendly(e) }));
@@ -325,6 +377,10 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (tab?.id) activeTabId = tab.id;
 });
 chrome.tabs.onRemoved.addListener((tabId) => frames.delete(tabId));
+// Reloading the page closes its help card, so the session is over.
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading' && tabId === activeTabId && runtime.sessionActive) void setRuntime({ sessionActive: null });
+});
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'label-stuck') return;
@@ -344,7 +400,7 @@ onSettingsChanged(async (s) => {
 });
 
 async function boot() {
-  await settingsReady;
+  await Promise.all([settingsReady, runtimeReady]);
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   activeTabId = tab?.id ?? null;
@@ -352,8 +408,19 @@ async function boot() {
   await updateBadge();
 }
 
+// A help card can't survive a browser restart; a leftover flag would block the owl forever.
+chrome.runtime.onStartup.addListener(async () => {
+  await runtimeReady;
+  if (runtime.sessionActive) await setRuntime({ sessionActive: null });
+});
+
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') await chrome.runtime.openOptionsPage();
+  await runtimeReady;
+  if (runtime.sessionActive) await setRuntime({ sessionActive: null });
+  // Give already-open pages the owl without needing a refresh.
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+  for (const t of tabs) if (t.id !== undefined) void injectContentScript(t.id);
 });
 
 startTabTracker();

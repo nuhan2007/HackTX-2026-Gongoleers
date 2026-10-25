@@ -70,6 +70,15 @@ export function SidePanel() {
           <SetupCard missing={state.missing} />
         ) : (
           <>
+            {!state.pageVisible && (
+              <div className="card nudge-card" role="status">
+                <p className="small">
+                  <strong>Gongo can't see this page,</strong> so the owl can't appear here and page activity isn't counted. Reload the page. For a
+                  local file, turn on "Allow access to file URLs" for Gongo at <code>chrome://extensions</code>, or serve it over http. Chrome's
+                  own pages and the PDF viewer never allow it; use "I'm stuck" here instead.
+                </p>
+              </div>
+            )}
             {tab === 'tutor' && <Tutor state={state} />}
             {tab === 'timeline' && <Timeline state={state} />}
             {tab === 'stats' && <Stats />}

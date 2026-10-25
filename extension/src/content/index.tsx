@@ -4,9 +4,11 @@ import { ActivityTracker } from './activityTracker';
 import { ContentSignals } from './contentSignals';
 import { readPageContext } from './pageContext';
 import { Sprite, spriteCss } from './sprite/Sprite';
+import { WorkLog } from './workLog';
 
 const isTop = window.top === window;
-const content = new ContentSignals();
+const log = new WorkLog();
+const content = new ContentSignals(log);
 const activity = new ActivityTracker();
 
 // After the extension reloads, this orphaned script can no longer talk to it; stop quietly.
@@ -29,7 +31,6 @@ const timer = setInterval(() => {
   const msg: Msg = {
     type: 'page-signals',
     signals: {
-      content: content.signals(),
       activity: activity.signals(),
       idleMs: activity.idleMs,
       dwellMs: content.dwellMs,
@@ -39,11 +40,12 @@ const timer = setInterval(() => {
   chrome.runtime.sendMessage(msg).catch(() => {});
 }, 1000);
 
-if (isTop) {
-  chrome.runtime.onMessage.addListener((msg: Msg, _sender, reply) => {
-    if (msg.type === 'get-page-context') reply(readPageContext());
-  });
+// Every frame answers "what's on screen?" so embedded editors and whiteboards are included.
+chrome.runtime.onMessage.addListener((msg: Msg, _sender, reply) => {
+  if (msg.type === 'get-page-context') reply(readPageContext(log));
+});
 
+if (isTop) {
   // Closed shadow root so host-page CSS can't reach the sprite and page scripts can't reach in.
   const host = document.createElement('div');
   host.id = 'gongo-root';
@@ -53,6 +55,14 @@ if (isTop) {
   style.textContent = spriteCss;
   const mount = document.createElement('div');
   shadow.append(style, mount);
-  (document.body ?? document.documentElement).appendChild(host);
-  createRoot(mount).render(<Sprite />);
+  // Attach to <html> (not <body>) so a transformed/replaced body can't move or delete the owl,
+  // and put it back if a page script wipes it.
+  const attach = () => {
+    if (!host.isConnected) document.documentElement.appendChild(host);
+  };
+  attach();
+  new MutationObserver(attach).observe(document.documentElement, { childList: true });
+  // The owl hides itself while the tab image is taken so it doesn't cover the problem.
+  const setHidden = (hidden: boolean) => (host.style.visibility = hidden ? 'hidden' : 'visible');
+  createRoot(mount).render(<Sprite setHidden={setHidden} />);
 }

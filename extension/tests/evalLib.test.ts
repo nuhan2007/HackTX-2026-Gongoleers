@@ -5,7 +5,7 @@ import { evaluate, replayTriggers } from '../tools/evalLib';
 function log(scores: number[], labelsAtSec: number[]): LabelLog {
   return {
     sessionStart: 0,
-    ticks: scores.map((score, i) => ({ t: i * 1000, score, channels: { content: 0, activity: 0, face: 0 }, signals: {}, fired: false })),
+    ticks: scores.map((score, i) => ({ t: i * 1000, score, channels: { activity: 0, face: 0 }, signals: {}, fired: false })),
     labels: labelsAtSec.map((s) => s * 1000),
   };
 }

@@ -1,10 +1,10 @@
 // Orchestrates a tutor session. Everything returned from here is safe to show the student;
 // the hidden solution stays inside the session store.
 import { missingConcept } from '../ai/concept';
-import type { GeminiCtx } from '../ai/geminiClient';
+import type { OpenAICtx } from '../ai/openaiClient';
 import { UNDERSTANDING_QUESTION } from '../ai/prompts';
 import { createSession, deleteSession, getSession, saveSession, type TutorSession } from '../ai/sessionStore';
-import { solve } from '../ai/solver';
+import { solve, type SolveInput } from '../ai/solver';
 import { gradeExplanation } from '../ai/tutor';
 import { findVideoMoment } from '../ai/videoTimestamp';
 import { deterministicLeak } from '../leak/deterministic';
@@ -12,12 +12,19 @@ import { checkMessage, guardedTutorTurn } from '../leak/guard';
 import { VideoCache } from '../serp/cache';
 import { searchPractice } from '../serp/trustedSites';
 import { searchYouTube } from '../serp/youtube';
-import type { PageContext, StartSessionResult, TutorReply } from '../shared/messages';
+import type { StartSessionResult, TutorReply } from '../shared/messages';
 import type { HintLevel, SessionSummary, TutorAction, VideoMoment } from '../shared/types';
 import { conceptCount, recordSummary } from './metrics';
 
 const cache = new VideoCache(chrome.storage.local);
 const STRUGGLE_FOR_VIDEO = 3;
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+};
 
 async function load(id: string): Promise<TutorSession> {
   const s = await getSession(id);
@@ -25,18 +32,14 @@ async function load(id: string): Promise<TutorSession> {
   return s;
 }
 
-export async function startSession(
-  ctx: GeminiCtx,
-  image: string,
-  context: PageContext | null,
-  triggeredAt: number | null,
-): Promise<StartSessionResult> {
-  const hidden = await solve(ctx, image, context);
+export async function startSession(ctx: OpenAICtx, input: SolveInput, triggeredAt: number | null): Promise<StartSessionResult> {
+  const hidden = await solve(ctx, input);
   if (!hidden.problemDetected) {
     return {
       sessionId: '',
       problemDetected: false,
-      message: 'I couldn\'t find a problem in that capture. Try dragging the box around just the question.',
+      message: 'I couldn\'t spot a problem on this tab. Scroll so the question is on screen, then ask me again.',
+      suggestions: [],
       hintLevel: 1,
       replyAssessment: 'none',
       suggestVideo: false,
@@ -45,7 +48,7 @@ export async function startSession(
   }
   const session = await createSession({
     triggeredAt,
-    url: context?.url ?? '',
+    url: input.context?.url ?? '',
     hidden,
     history: [],
     hintLevel: 1,
@@ -61,6 +64,7 @@ export async function startSession(
     sessionId: session.id,
     problemDetected: true,
     message: g.turn.message,
+    suggestions: g.turn.suggestions,
     hintLevel: g.turn.hintLevel,
     replyAssessment: 'none',
     suggestVideo: false,
@@ -73,7 +77,7 @@ const STUDENT_TEXT: Partial<Record<TutorAction, string>> = {
   different_hint: '(asked for a different hint)',
 };
 
-export async function tutorTurn(ctx: GeminiCtx, sessionId: string, action: TutorAction, text: string): Promise<TutorReply> {
+export async function tutorTurn(ctx: OpenAICtx, sessionId: string, action: TutorAction, text: string): Promise<TutorReply> {
   const s = await load(sessionId);
   const studentText = text.trim() || STUDENT_TEXT[action] || '';
   if (studentText) s.history.push({ role: 'student', text: studentText, t: Date.now() });
@@ -91,6 +95,7 @@ export async function tutorTurn(ctx: GeminiCtx, sessionId: string, action: Tutor
 
   return {
     message: g.turn.message,
+    suggestions: g.turn.suggestions,
     hintLevel: s.hintLevel,
     replyAssessment: g.turn.replyAssessment,
     suggestVideo: action === 'dont_know' || s.struggleStreak >= STRUGGLE_FOR_VIDEO || !!g.turn.missingPrerequisite,
@@ -98,7 +103,7 @@ export async function tutorTurn(ctx: GeminiCtx, sessionId: string, action: Tutor
   };
 }
 
-export async function checkUnderstanding(ctx: GeminiCtx, sessionId: string, explanation: string) {
+export async function checkUnderstanding(ctx: OpenAICtx, sessionId: string, explanation: string) {
   const s = await load(sessionId);
   s.history.push({ role: 'tutor', text: UNDERSTANDING_QUESTION, t: Date.now() }, { role: 'student', text: explanation, t: Date.now() });
   let result: { understood: boolean; feedback: string };
@@ -118,7 +123,7 @@ export async function checkUnderstanding(ctx: GeminiCtx, sessionId: string, expl
   return result;
 }
 
-export async function findVideo(ctx: GeminiCtx, serpKey: string, sessionId: string): Promise<VideoMoment> {
+export async function findVideo(ctx: OpenAICtx, serpKey: string, sessionId: string): Promise<VideoMoment> {
   const s = await load(sessionId);
   const prereq = s.concepts[s.concepts.length - 1] ?? '';
   const { concept, query } = await missingConcept(ctx, s.hidden, s.history, prereq);
@@ -162,7 +167,7 @@ export async function endSession(sessionId: string, solved: boolean): Promise<Se
     concepts: s.concepts,
     videosWatched: s.videos,
     turns: s.history.filter((m) => m.role === 'student').length,
-    url: s.url ? new URL(s.url).hostname : '',
+    url: hostOf(s.url),
   };
   await recordSummary(summary);
   await deleteSession(sessionId);

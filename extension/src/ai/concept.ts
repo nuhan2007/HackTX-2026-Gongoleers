@@ -1,11 +1,11 @@
 import type { ChatMessage, SolverResult } from '../shared/types';
-import { generateJson, type GeminiCtx } from './geminiClient';
+import { generateJson, type OpenAICtx } from './openaiClient';
 import { CONCEPT_SYSTEM } from './prompts';
 import { CONCEPT_SCHEMA } from './schemas';
 
 /** Names the missing concept and a concept-level search query (never the problem itself). */
 export async function missingConcept(
-  ctx: GeminiCtx,
+  ctx: OpenAICtx,
   hidden: SolverResult,
   history: ChatMessage[],
   hint: string,
@@ -25,7 +25,7 @@ export async function missingConcept(
       ],
       schema: CONCEPT_SCHEMA,
       temperature: 0.2,
-      timeoutMs: 10_000,
+      timeoutMs: 20_000,
     });
   } catch {
     r = { concept: fallbackConcept, query: `${fallbackConcept} explained` };

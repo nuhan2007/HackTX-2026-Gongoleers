@@ -4,6 +4,8 @@ import type { Signal } from '../shared/types';
 
 const within = <T extends { t: number }>(xs: T[], now: number, ms: number) => xs.filter((x) => now - x.t < ms);
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+// Typing/clicking in Gongo's own card (retargeted to its shadow host) isn't page activity.
+const fromGongo = (e: Event) => (e.target as Element | null)?.id === 'gongo-root';
 
 export class ActivityTracker {
   private lastInputAt = Date.now();
@@ -50,16 +52,16 @@ export class ActivityTracker {
     const sc = within(this.scrolls, now, 30_000);
     let reversals = 0;
     for (let i = 1; i < sc.length; i++) if (sc[i].dir !== 0 && sc[i].dir !== sc[i - 1].dir) reversals++;
-    if (reversals >= 3) out.push({ id: 'rereading', value: clamp01((reversals - 2) / 6), reason: `re-reading (scrolled back ×${Math.ceil(reversals / 2)})` });
+    if (reversals >= 2) out.push({ id: 'rereading', value: clamp01((reversals - 1) / 3), reason: `re-reading (scrolled back ×${Math.ceil(reversals / 2)})` });
 
     // Erratic mouse: a long path that goes nowhere over the last 10s.
     const mv = within(this.moves, now, 10_000);
-    if (mv.length > 20) {
+    if (mv.length > 12) {
       let path = 0;
       for (let i = 1; i < mv.length; i++) path += Math.hypot(mv[i].x - mv[i - 1].x, mv[i].y - mv[i - 1].y);
       const disp = Math.hypot(mv[mv.length - 1].x - mv[0].x, mv[mv.length - 1].y - mv[0].y) + 50;
       const ratio = path / disp;
-      if (path > 3000 && ratio > 6) out.push({ id: 'erraticMouse', value: clamp01((ratio - 6) / 10), reason: 'mouse wandering aimlessly' });
+      if (path > 1500 && ratio > 4) out.push({ id: 'erraticMouse', value: clamp01((ratio - 4) / 6), reason: 'mouse wandering aimlessly' });
     }
 
     // Rage clicks: ≥3 clicks inside 1s and 30px.
@@ -72,14 +74,14 @@ export class ActivityTracker {
         i += 2;
       }
     }
-    if (bursts > 0) out.push({ id: 'rageClicks', value: clamp01(bursts / 2), reason: `rapid repeat clicks ×${bursts}` });
+    if (bursts > 0) out.push({ id: 'rageClicks', value: clamp01(bursts), reason: `rapid repeat clicks ×${bursts}` });
 
     // Backspace bursts: a high delete ratio in recent typing.
     const ks = within(this.keys, now, 30_000);
     const dels = ks.filter((k) => k.del).length;
-    if (dels >= 8 && ks.length > 0) {
+    if (dels >= 4 && ks.length > 0) {
       const ratio = dels / ks.length;
-      if (ratio > 0.25) out.push({ id: 'backspace', value: clamp01((ratio - 0.2) / 0.4), reason: `backspace bursts (${dels} deletes in 30s)` });
+      if (ratio > 0.15) out.push({ id: 'backspace', value: clamp01((ratio - 0.1) / 0.25), reason: `backspace bursts (${dels} deletes in 30s)` });
     }
 
     // Repeatedly highlighting the same text.
@@ -119,11 +121,13 @@ export class ActivityTracker {
 
   private onClick = (e: MouseEvent) => {
     this.touch();
+    if (fromGongo(e)) return;
     this.clicks.push({ t: Date.now(), x: e.screenX, y: e.screenY });
   };
 
   private onKey = (e: KeyboardEvent) => {
     this.touch();
+    if (fromGongo(e)) return;
     if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')
       this.keys.push({ t: Date.now(), del: e.key === 'Backspace' || e.key === 'Delete' });
   };

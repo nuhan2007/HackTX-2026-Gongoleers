@@ -1,7 +1,7 @@
-// Every tutor message passes through here: draft → deterministic check → Gemini judge.
+// Every tutor message passes through here: draft → deterministic check → LLM judge.
 // A rejected draft is regenerated up to twice, then we fall back to a safe generic question.
-import { GeminiError, type GeminiCtx } from '../ai/geminiClient';
-import { FALLBACK_QUESTIONS } from '../ai/prompts';
+import { OpenAIError, type OpenAICtx } from '../ai/openaiClient';
+import { FALLBACK_QUESTIONS, FALLBACK_SUGGESTIONS } from '../ai/prompts';
 import { judgeLeak, tutorTurn, type TutorTurnArgs } from '../ai/tutor';
 import type { HintLevel, SolverResult, TutorTurn } from '../shared/types';
 import { deterministicLeak, type LeakVerdict } from './deterministic';
@@ -17,8 +17,8 @@ export interface GuardedTurn {
 
 /** Injected so the eval can count drafts; the extension uses the real calls. */
 export interface GuardDeps {
-  draft: (ctx: GeminiCtx, a: TutorTurnArgs) => Promise<TutorTurn>;
-  judge: (ctx: GeminiCtx, hidden: SolverResult, message: string) => Promise<LeakVerdict>;
+  draft: (ctx: OpenAICtx, a: TutorTurnArgs) => Promise<TutorTurn>;
+  judge: (ctx: OpenAICtx, hidden: SolverResult, message: string) => Promise<LeakVerdict>;
 }
 const realDeps: GuardDeps = { draft: tutorTurn, judge: judgeLeak };
 
@@ -28,7 +28,7 @@ export function fallbackQuestion(level: HintLevel, seed = Date.now()): string {
 }
 
 /** Checks one message (deterministic first, then the judge). Fails closed if the judge errors. */
-export async function checkMessage(ctx: GeminiCtx, hidden: SolverResult, message: string, deps = realDeps) {
+export async function checkMessage(ctx: OpenAICtx, hidden: SolverResult, message: string, deps = realDeps) {
   const det = deterministicLeak(message, hidden);
   if (det.leaks) return { verdict: det, by: 'deterministic' as const };
   try {
@@ -39,7 +39,7 @@ export async function checkMessage(ctx: GeminiCtx, hidden: SolverResult, message
   }
 }
 
-export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps = realDeps): Promise<GuardedTurn> {
+export async function guardedTutorTurn(ctx: OpenAICtx, args: TutorTurnArgs, deps = realDeps): Promise<GuardedTurn> {
   const attempts: GuardedTurn['attempts'] = [];
   let leakFeedback: string | undefined;
   let lastTurn: TutorTurn | null = null;
@@ -50,7 +50,7 @@ export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps
       draft = await deps.draft(ctx, { ...args, leakFeedback });
     } catch (e) {
       // Auth/rate errors should surface to the UI; timeouts and the rest fall back to a generic question.
-      if (e instanceof GeminiError && (e.kind === 'auth' || e.kind === 'network')) throw e;
+      if (e instanceof OpenAIError && (e.kind === 'auth' || e.kind === 'network')) throw e;
       break;
     }
     lastTurn = draft;
@@ -58,8 +58,10 @@ export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps
       leakFeedback = 'the message was empty';
       continue;
     }
-    const { verdict, by } = await checkMessage(ctx, args.hidden, draft.message, deps);
-    attempts.push({ message: draft.message, verdict, by });
+    // Suggestions are shown too, so they're checked together with the question.
+    const shown = [draft.message, ...draft.suggestions].join('\n');
+    const { verdict, by } = await checkMessage(ctx, args.hidden, shown, deps);
+    attempts.push({ message: shown, verdict, by });
     if (!verdict.leaks) return { turn: draft, fallback: false, attempts };
     leakFeedback = verdict.reason;
   }
@@ -70,6 +72,7 @@ export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps
       replyAssessment: lastTurn?.replyAssessment ?? 'none',
       hintLevel: level,
       message: fallbackQuestion(level, args.history.length),
+      suggestions: FALLBACK_SUGGESTIONS[level],
       missingPrerequisite: lastTurn?.missingPrerequisite ?? '',
     },
     fallback: true,

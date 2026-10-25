@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { UNDERSTANDING_QUESTION } from '../ai/prompts';
-import { isError, send, type PageContext, type PanelState, type TutorReply } from '../shared/messages';
+import { isError, send, type PanelState, type TutorReply } from '../shared/messages';
 import type { HintLevel, SessionSummary, TutorAction, VideoMoment } from '../shared/types';
-import { Capture } from './Capture';
 import { Summary } from './Summary';
 import { useSpeech } from './useSpeech';
 import { VideoCard } from './VideoCard';
 
-type View = 'home' | 'capture' | 'chat' | 'summary';
+type View = 'home' | 'chat' | 'summary';
 interface Bubble {
   role: 'tutor' | 'student' | 'system';
   text: string;
@@ -63,22 +62,26 @@ export function Tutor({ state }: { state: PanelState }) {
     }
   }
 
+  // Suggestions ride along in the same bubble as a short "try this next" list.
+  const tutorText = (r: Pick<TutorReply, 'message' | 'suggestions'>) =>
+    r.suggestions.length ? `${r.message}\n\nTry this next:\n${r.suggestions.map((s) => `• ${s}`).join('\n')}` : r.message;
+
   const applyReply = (r: TutorReply) =>
     update((u) => ({
-      bubbles: [...u.bubbles, { role: 'tutor', text: r.message }],
+      bubbles: [...u.bubbles, { role: 'tutor', text: tutorText(r) }],
       hintLevel: r.hintLevel,
       offerVideo: r.suggestVideo && !u.video,
     }));
 
-  async function start(image: string, context: PageContext | null) {
+  async function start() {
     update({ ...EMPTY, view: 'chat' });
-    const r = await run('Reading the problem…', () => send({ type: 'start-session', image, context }));
+    const r = await run('Looking at your tab…', () => send({ type: 'start-help' }));
     if (!r) return update({ view: 'home' });
     if (!r.problemDetected) {
       setError(r.message);
-      return update({ view: 'capture' });
+      return update({ view: 'home' });
     }
-    update({ sessionId: r.sessionId, bubbles: [{ role: 'tutor', text: r.message }], hintLevel: r.hintLevel });
+    update({ sessionId: r.sessionId, bubbles: [{ role: 'tutor', text: tutorText(r) }], hintLevel: r.hintLevel });
   }
 
   async function turn(action: TutorAction, text = '') {
@@ -136,14 +139,6 @@ export function Tutor({ state }: { state: PanelState }) {
 
   if (ui.view === 'summary' && summary) return <Summary s={summary} onDone={() => update(EMPTY)} />;
 
-  if (ui.view === 'capture')
-    return (
-      <>
-        {error && <p className="error">{error}</p>}
-        <Capture onSend={start} onCancel={() => update(EMPTY)} />
-      </>
-    );
-
   if (ui.view === 'home')
     return (
       <div className="stack">
@@ -168,10 +163,11 @@ export function Tutor({ state }: { state: PanelState }) {
             </p>
           </div>
         )}
-        <button className="primary big" onClick={() => update({ view: 'capture' })}>
+        {error && <p className="error">{error}</p>}
+        <button className="primary big" onClick={start}>
           I'm stuck. Let's think it through
         </button>
-        <p className="small muted">Works on any tab, including PDFs. You choose exactly what gets sent.</p>
+        <p className="small muted">When you ask, Gongo looks at this tab: the problem, what you've typed or drawn, and the feedback you got.</p>
       </div>
     );
 

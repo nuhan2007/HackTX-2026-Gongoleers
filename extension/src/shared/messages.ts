@@ -17,6 +17,8 @@ export interface PanelState {
   enabled: boolean;
   cameraOk: boolean;
   cameraError: string | null;
+  /** False when no content script on the tab being watched has reported in (owl can't show there). */
+  pageVisible: boolean;
   phase: TriggerPhase;
   output: EngineOutput;
   timeline: TimelinePoint[];
@@ -30,6 +32,8 @@ export interface TutorReply {
   message: string;
   hintLevel: HintLevel;
   replyAssessment: ReplyAssessment;
+  /** 2-3 concrete "try this next" actions (never the answer). */
+  suggestions: string[];
   /** True when the backend thinks a prerequisite video would help. */
   suggestVideo: boolean;
   fallback: boolean;
@@ -40,18 +44,29 @@ export interface StartSessionResult extends TutorReply {
   problemDetected: boolean;
 }
 
+/** What one frame of the tab shows: read when the student asks for help. */
 export interface PageContext {
-  selection: string;
-  viewportText: string;
   url: string;
   title: string;
+  selection: string;
+  viewportText: string;
+  /** Source TeX of rendered math (KaTeX/MathJax/alt text). */
+  math: string[];
+  /** Visible answer fields and what's in them. */
+  fields: { label: string; value: string }[];
+  /** Recent typing, submissions, feedback and drawing activity. */
+  workLog: string[];
+  /** base64 JPEG snapshots of visible canvases (handwriting, whiteboards). */
+  drawings: string[];
 }
+
+export type HelpStage = 'looking' | 'reading' | 'thinking';
 
 /** Every runtime message in the extension. `type` discriminates; responses are listed in `Responses`. */
 export type Msg =
   // content → background
   | { type: 'page-signals'; signals: PageSignals }
-  | { type: 'open-panel' }
+  | { type: 'start-help' }
   | { type: 'nudge-dismissed'; snooze: boolean }
   // offscreen → background
   | { type: 'face-reading'; facePresent: boolean; gazeAway: boolean; raw: RawFace | null }
@@ -59,16 +74,10 @@ export type Msg =
   // background → content
   | { type: 'nudge'; show: boolean; reasons: string[] }
   | { type: 'get-page-context' }
+  | { type: 'help-progress'; stage: HelpStage }
   // panel → background
   | { type: 'get-state' }
   | { type: 'force-trigger' }
-  | { type: 'capture-tab' }
-  | { type: 'page-context' }
-  | {
-      type: 'start-session';
-      image: string; // base64 JPEG (no data: prefix)
-      context: PageContext | null;
-    }
   | { type: 'tutor-turn'; sessionId: string; action: TutorAction; text: string }
   | { type: 'check-understanding'; sessionId: string; text: string }
   | { type: 'find-video'; sessionId: string }
@@ -93,10 +102,8 @@ export interface EvalResults {
 
 export interface Responses {
   'get-state': PanelState;
-  'capture-tab': { image: string } | { error: string };
-  'page-context': PageContext | null;
   'get-page-context': PageContext;
-  'start-session': StartSessionResult | { error: string };
+  'start-help': StartSessionResult | { error: string };
   'tutor-turn': TutorReply | { error: string };
   'check-understanding': { understood: boolean; feedback: string } | { error: string };
   'find-video': VideoMoment | { error: string };

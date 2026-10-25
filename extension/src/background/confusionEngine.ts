@@ -1,9 +1,8 @@
 // Pure fusion logic: signals in, smoothed 0..100 confusion score out.
 // State is a plain JSON object so engineStore can persist it across service-worker restarts.
 import {
-  AGREEMENT_BONUS,
-  AGREEMENT_LEVEL,
-  CHANNEL_WEIGHTS,
+  CHANNEL_ALPHA_PER_SEC,
+  CHANNEL_GAIN,
   DWELL_RAMP_MS,
   DWELL_START_MS,
   EMA_ALPHA_PER_SEC,
@@ -16,6 +15,8 @@ import type { Channel, EngineInput, EngineOutput, Signal, TimelinePoint } from '
 
 export interface EngineState {
   ema: number; // 0..1
+  /** Smoothed per-channel values (what the fusion and the Live meters use). */
+  channels: Record<Channel, number>;
   lastTs: number | null;
   /** Face-away time accumulated since the last page input; subtracted from idle so it "pauses". */
   idleAwayMs: number;
@@ -26,7 +27,7 @@ export interface EngineState {
 }
 
 export function initialEngineState(): EngineState {
-  return { ema: 0, lastTs: null, idleAwayMs: 0, dwellAwayMs: 0, lastIdleMs: 0, lastDwellMs: 0, timeline: [] };
+  return { ema: 0, channels: { activity: 0, face: 0 }, lastTs: null, idleAwayMs: 0, dwellAwayMs: 0, lastIdleMs: 0, lastDwellMs: 0, timeline: [] };
 }
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -47,13 +48,15 @@ function channelScore(signals: Signal[]): number {
 export function step(prev: EngineState, input: EngineInput): { state: EngineState; output: EngineOutput } {
   const { now, page, face } = input;
   const dt = prev.lastTs === null ? 1000 : Math.max(0, Math.min(now - prev.lastTs, 10_000));
-  const away = !!face && (!face.facePresent || face.gazeAway);
+  // Only an actual look-away pauses idle. A face the camera simply can't find (lighting, glasses, angle)
+  // must not freeze the score, or the owl could never appear.
+  const away = !!face && face.facePresent && face.gazeAway;
 
   const state: EngineState = { ...prev, lastTs: now };
   const signals: Signal[] = [...input.tab];
 
   if (page) {
-    signals.push(...page.content, ...page.activity);
+    signals.push(...page.activity);
 
     // Idle/dwell timers reset when the page reports fresh input (the counter went down).
     if (page.idleMs < prev.lastIdleMs) state.idleAwayMs = 0;
@@ -77,26 +80,34 @@ export function step(prev: EngineState, input: EngineInput): { state: EngineStat
   const faceUsable = !!face && face.facePresent;
   if (faceUsable) signals.push(...face!.signals);
 
-  const byChannel: Record<Channel, Signal[]> = { content: [], activity: [], face: [] };
+  const byChannel: Record<Channel, Signal[]> = { activity: [], face: [] };
   for (const s of signals) byChannel[SIGNAL_WEIGHTS[s.id].channel].push(s);
-  const channels: Record<Channel, number> = {
-    content: channelScore(byChannel.content),
+  const rawChannels: Record<Channel, number> = {
     activity: channelScore(byChannel.activity),
-    face: faceUsable ? channelScore(byChannel.face) : 0,
+    face: channelScore(byChannel.face),
   };
 
-  // When no face is visible, spread the face weight over the other channels proportionally.
-  const active: Channel[] = faceUsable ? ['content', 'activity', 'face'] : ['content', 'activity'];
-  const totalW = active.reduce((a, c) => a + CHANNEL_WEIGHTS[c], 0);
-  let raw = active.reduce((a, c) => a + (CHANNEL_WEIGHTS[c] / totalW) * channels[c], 0);
-  if (active.filter((c) => channels[c] > AGREEMENT_LEVEL).length >= 2) raw += AGREEMENT_BONUS;
-  raw = clamp01(raw);
+  // Smooth each channel first so one twitchy frame can't swing the score.
+  const prevCh = prev.channels ?? { activity: 0, face: 0 };
+  const chAlpha = 1 - Math.pow(1 - CHANNEL_ALPHA_PER_SEC, dt / 1000);
+  const channels = { ...prevCh };
+  for (const c of ['activity', 'face'] as Channel[]) {
+    // While no face is visible the face channel holds its value (it's excluded from fusion below).
+    if (c === 'face' && !faceUsable) continue;
+    channels[c] = prev.lastTs === null ? rawChannels[c] * chAlpha : prevCh[c] + chAlpha * (rawChannels[c] - prevCh[c]);
+  }
+  state.channels = channels;
+
+  // Noisy-OR across channels: either one can carry the score, and agreement adds up smoothly.
+  // With no face visible, the face simply doesn't contribute (and never drags the score down).
+  const active: Channel[] = faceUsable ? ['activity', 'face'] : ['activity'];
+  const raw = clamp01(1 - active.reduce((keep, c) => keep * (1 - CHANNEL_GAIN[c] * channels[c]), 1));
 
   const alpha = 1 - Math.pow(1 - EMA_ALPHA_PER_SEC, dt / 1000);
   state.ema = prev.lastTs === null ? raw * alpha : prev.ema + alpha * (raw - prev.ema);
 
   const topContributors = signals
-    .map((s) => ({ s, impact: SIGNAL_WEIGHTS[s.id].weight * CHANNEL_WEIGHTS[SIGNAL_WEIGHTS[s.id].channel] * s.value }))
+    .map((s) => ({ s, impact: SIGNAL_WEIGHTS[s.id].weight * CHANNEL_GAIN[SIGNAL_WEIGHTS[s.id].channel] * s.value }))
     .filter((x) => x.impact > 0.02)
     .sort((a, b) => b.impact - a.impact)
     .slice(0, 4)
@@ -108,5 +119,5 @@ export function step(prev: EngineState, input: EngineInput): { state: EngineStat
     state.timeline = [...prev.timeline, { t: now, score, reasons: topContributors }].slice(-TIMELINE_LENGTH);
   }
 
-  return { state, output: { score, channels, topContributors } };
+  return { state, output: { score, channels: { ...channels, face: faceUsable ? channels.face : 0 }, topContributors } };
 }

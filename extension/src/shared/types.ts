@@ -1,11 +1,10 @@
-// One measured cue. `value` is 0..1; `reason` is what the timeline and Gemini see.
+// One measured cue. `value` is 0..1; `reason` is what the timeline and the tutor model see.
 export interface Signal {
   id: SignalId;
   value: number;
   reason: string;
 }
 
-export type ContentSignalId = 'incorrect' | 'resubmits' | 'repeatedError' | 'editResubmit';
 export type ActivitySignalId =
   | 'rereading'
   | 'erraticMouse'
@@ -16,13 +15,12 @@ export type ActivitySignalId =
 export type FaceSignalId = 'browFurrow' | 'browRaise' | 'squint' | 'lipPress' | 'headTilt';
 // Idle and dwell are computed by the engine from raw timers so they can be paused.
 export type TimerSignalId = 'idle' | 'dwell';
-export type SignalId = ContentSignalId | ActivitySignalId | FaceSignalId | TimerSignalId;
+export type SignalId = ActivitySignalId | FaceSignalId | TimerSignalId;
 
-export type Channel = 'content' | 'activity' | 'face';
+export type Channel = 'activity' | 'face';
 
 /** What a content script reports each second for its frame. */
 export interface PageSignals {
-  content: Signal[];
   activity: Signal[];
   /** ms since the last keyboard/mouse/scroll input in this frame. */
   idleMs: number;
@@ -78,6 +76,8 @@ export interface SolverResult {
   misconceptions: string[];
   answerKeyPhrases: string[];
   problemDetected: boolean;
+  /** What the student has typed/drawn/submitted so far and where it seems to go wrong. */
+  studentWork: string;
 }
 
 export interface ChatMessage {
@@ -92,6 +92,8 @@ export interface TutorTurn {
   replyAssessment: ReplyAssessment;
   hintLevel: HintLevel;
   message: string;
+  /** 2-3 short "try this next" actions; never the answer. */
+  suggestions: string[];
   missingPrerequisite: string;
 }
 
@@ -103,7 +105,7 @@ export interface VideoMoment {
   end: number;
   why: string;
   concept: string;
-  source: 'gemini-video' | 'metadata' | 'cache';
+  source: 'metadata' | 'cache';
   /** Trusted practice links, added when the student keeps getting stuck on this concept. */
   practice?: { title: string; link: string; site: string }[];
 }

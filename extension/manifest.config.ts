@@ -14,7 +14,7 @@ export default defineManifest({
   permissions: ['storage', 'unlimitedStorage', 'offscreen', 'tabs', 'activeTab', 'scripting', 'sidePanel'],
   host_permissions: [
     '<all_urls>',
-    'https://generativelanguage.googleapis.com/*',
+    'https://api.openai.com/*',
     'https://serpapi.com/*',
   ],
   content_scripts: [

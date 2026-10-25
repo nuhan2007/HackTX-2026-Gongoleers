@@ -6,14 +6,13 @@ import { NORMAL_TRIGGER } from '../src/shared/constants';
 import type { EngineInput, FaceReading, PageSignals, Signal } from '../src/shared/types';
 
 const page = (over: Partial<PageSignals> = {}): PageSignals => ({
-  content: [],
   activity: [],
   idleMs: 0,
   dwellMs: 0,
   questionLabel: 'Q4',
   ...over,
 });
-const incorrect: Signal = { id: 'incorrect', value: 1, reason: 'Incorrect ×2 on Q4' };
+const rage: Signal = { id: 'rageClicks', value: 1, reason: 'rapid repeated clicks' };
 const furrow: Signal = { id: 'browFurrow', value: 1, reason: 'brow furrowed' };
 const faceOn = (signals: Signal[] = []): FaceReading => ({ signals, facePresent: true, gazeAway: false });
 
@@ -30,48 +29,49 @@ function run(n: number, input: (t: number) => Omit<EngineInput, 'now'>, start = 
 }
 
 describe('confusionEngine fusion', () => {
-  it('uses 0.5/0.3/0.2 weights when a face is visible', () => {
-    const { output } = run(200, () => ({ page: page({ content: [incorrect] }), tab: [], face: faceOn() }));
-    // content channel = 0.85, face = 0, activity = 0 → raw = 0.5 * 0.85
-    expect(output.channels.content).toBeCloseTo(0.85);
-    expect(Math.abs(output.score - 42.5)).toBeLessThanOrEqual(0.5);
+  it('uses activity/face gains when a face is visible', () => {
+    const { output } = run(200, () => ({ page: page({ activity: [rage] }), tab: [], face: faceOn() }));
+    // activity channel = 0.6 (rageClicks weight), face = 0 → raw = 0.7 * 0.6
+    expect(output.channels.activity).toBeCloseTo(0.6);
+    expect(Math.abs(output.score - 42)).toBeLessThanOrEqual(0.5);
   });
 
-  it('spreads the face weight over content/activity when no face is present', () => {
+  it('ignores the face when none is visible', () => {
     const { output } = run(200, () => ({
-      page: page({ content: [incorrect] }),
+      page: page({ activity: [rage] }),
       tab: [],
       face: { signals: [furrow], facePresent: false, gazeAway: false },
     }));
-    // raw = (0.5 / 0.8) * 0.85; face signals ignored
+    // face signals are ignored and don't drag the score down → same as the face-on, no-expression case
     expect(output.channels.face).toBe(0);
-    expect(output.score).toBeCloseTo(53, 0);
+    expect(output.score).toBeCloseTo(42, 0);
   });
 
-  it('adds the agreement bonus when two channels are high', () => {
-    const solo = run(200, () => ({ page: page({ content: [incorrect] }), tab: [], face: faceOn() })).output.score;
-    const both = run(200, () => ({ page: page({ content: [incorrect] }), tab: [], face: faceOn([furrow]) })).output.score;
-    // face channel 0.7 → +0.2*0.7 = 14 points, plus 10 bonus
-    expect(both - solo).toBeCloseTo(24, 0);
+  it('two agreeing channels reinforce each other', () => {
+    const solo = run(200, () => ({ page: page({ activity: [rage] }), tab: [], face: faceOn() })).output.score;
+    const both = run(200, () => ({ page: page({ activity: [rage] }), tab: [], face: faceOn([furrow]) })).output.score;
+    // noisy-OR: 1 - (1-0.42)(1-0.55*0.8) = 67.5 vs 42
+    expect(Math.abs(both - solo - 25.5)).toBeLessThanOrEqual(1);
   });
 
   it('smooths with EMA instead of jumping', () => {
-    const { output } = run(2, () => ({ page: page({ content: [incorrect] }), tab: [], face: faceOn() }));
+    const { output } = run(2, () => ({ page: page({ activity: [rage] }), tab: [], face: faceOn() }));
     expect(output.score).toBeLessThan(15);
   });
 
   it('names human-readable reasons in topContributors', () => {
-    const { output } = run(5, () => ({ page: page({ content: [incorrect] }), tab: [], face: faceOn([furrow]) }));
-    expect(output.topContributors[0]).toBe('Incorrect ×2 on Q4');
+    const { output } = run(5, () => ({ page: page({ activity: [rage] }), tab: [], face: faceOn([furrow]) }));
+    expect(output.topContributors[0]).toBe('brow furrowed');
+    expect(output.topContributors).toContain('rapid repeated clicks');
     expect(output.topContributors).toContain('brow furrowed');
   });
 
   it('pauses the idle timer while the student looks away (writing on paper)', () => {
-    // 60s of no input: first 40s looking away, last 20s looking at the screen.
+    // 60s of no input: first 56s looking away, last 4s looking at the screen.
     const away = run(60, (t) => ({
       page: page({ idleMs: t }),
       tab: [],
-      face: { signals: [], facePresent: true, gazeAway: t < 40_000 },
+      face: { signals: [], facePresent: true, gazeAway: t < 56_000 },
     }));
     const present = run(60, (t) => ({ page: page({ idleMs: t }), tab: [], face: faceOn() }));
     expect(away.output.topContributors.some((r) => r.startsWith('idle'))).toBe(false);
@@ -87,7 +87,12 @@ describe('confusionEngine fusion', () => {
 
 describe('triggerMachine', () => {
   const ctx = { enabled: true, snoozedUntil: 0 };
-  const cfg = NORMAL_TRIGGER; // 60 for 45s, cooldown 180s
+  // Explicit so the tests don't move when the defaults are retuned.
+  const cfg = { threshold: 60, durationSec: 45, cooldownSec: 180 };
+
+  it('defaults to a low threshold that a single strong channel can reach', () => {
+    expect(NORMAL_TRIGGER.threshold).toBe(35);
+  });
 
   function drive(scores: number[], s = initialTriggerState(), t0 = 0) {
     let fired = -1;
@@ -150,12 +155,12 @@ describe('engineStore', () => {
     const kv = new FakeKV();
     const store = new EngineStore(kv);
     let { engine, trigger } = await store.load();
-    const input = (now: number): EngineInput => ({ now, page: page({ content: [incorrect] }), tab: [], face: faceOn([furrow]) });
+    const input = (now: number): EngineInput => ({ now, page: page({ activity: [rage] }), tab: [], face: faceOn([furrow]) });
 
     for (let i = 0; i < 30; i++) {
       const r = step(engine, input(i * 1000));
       engine = r.state;
-      trigger = stepTrigger(trigger, r.output.score, i * 1000, { ...NORMAL_TRIGGER, threshold: 30 }, ctxOn).state;
+      trigger = stepTrigger(trigger, r.output.score, i * 1000, { ...NORMAL_TRIGGER, threshold: 30, durationSec: 60 }, ctxOn).state;
       await store.save({ engine, trigger });
     }
 

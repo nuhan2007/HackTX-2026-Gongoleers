@@ -1,34 +1,19 @@
-// Page-content cues: wrong-answer feedback after a submit, repeated submissions,
-// the same error text showing up again and again, and edit-and-resubmit loops.
-import type { Signal } from '../shared/types';
+// What the student is working on: the current question label, how long since they made progress,
+// and a log of what they submitted or saw (context for the tutor). It deliberately does NOT
+// judge whether an answer was right or wrong; confusion comes from activity and the face.
+import type { WorkLog } from './workLog';
 
-const INCORRECT_RE = /\b(incorrect|wrong( answer)?|try again|not quite|not correct|that's not right)\b|✗|❌/i;
-const CORRECT_RE = /\b(correct!|well done|great job|all tests passed|accepted|nice work)\b|✅|✓/i;
 const SUBMIT_RE = /\b(submit|check|run|test|grade|verify|answer|go)\b/i;
-const ERROR_RE = /\b([A-Z][A-Za-z]*(Exception|Error))\b|\berror:|\bfailed\b|\bexpected\b.{1,60}\bbut\b|\btraceback\b/;
-const ERROR_CLASS_RE = /error|invalid|incorrect|wrong|danger/i;
-
-const FEEDBACK_WINDOW_MS = 4000;
-const MEMORY_MS = 5 * 60_000;
-
-interface QuestionStats {
-  label: string;
-  submits: number[];
-  incorrect: number[];
-  answerChanges: number[];
-  lastAnswer: string | null;
-}
+const ERROR_RE = /\b([A-Z][A-Za-z]*(Exception|Error))\b|\berror:|\bfailed\b|\btraceback\b/;
 
 export class ContentSignals {
-  private questions = new Map<string, QuestionStats>();
-  private errorCounts = new Map<string, { name: string; times: number[] }>();
-  private lastSubmit: { at: number; key: string } | null = null;
-  private lastIncorrectAt = 0;
-  private current: string = '';
+  private lastSubmitAt = 0;
+  private lastErrorAt = 0;
+  private current = '';
   private lastProgressAt = Date.now();
   private observer: MutationObserver;
 
-  constructor(private doc: Document = document) {
+  constructor(private log: WorkLog | null = null, private doc: Document = document) {
     doc.addEventListener('click', this.onClick, true);
     doc.addEventListener('submit', this.onSubmit, true);
     doc.addEventListener('input', this.onInput, true);
@@ -47,37 +32,12 @@ export class ContentSignals {
   }
 
   get questionLabel(): string {
-    return this.stats(this.current).label;
+    return this.current;
   }
 
+  /** ms on the current question without new input. */
   get dwellMs(): number {
     return Date.now() - this.lastProgressAt;
-  }
-
-  signals(now = Date.now()): Signal[] {
-    const out: Signal[] = [];
-    const q = this.stats(this.current);
-    const recent = (ts: number[]) => ts.filter((t) => now - t < MEMORY_MS).length;
-
-    const wrong = recent(q.incorrect);
-    if (wrong > 0)
-      out.push({ id: 'incorrect', value: wrong === 1 ? 0.55 : wrong === 2 ? 0.85 : 1, reason: `${wrong} incorrect ${wrong === 1 ? 'answer' : 'submissions'} on ${q.label}` });
-
-    const subs = recent(q.submits);
-    if (subs >= 2) out.push({ id: 'resubmits', value: Math.min(1, (subs - 1) / 3), reason: `${subs} submissions on ${q.label}` });
-
-    const edits = recent(q.answerChanges);
-    if (edits >= 2)
-      out.push({ id: 'editResubmit', value: Math.min(1, (edits - 1) / 3), reason: `answer changed ${edits}× and resubmitted` });
-
-    let worst: { name: string; n: number } | null = null;
-    for (const e of this.errorCounts.values()) {
-      const n = recent(e.times);
-      if (n >= 2 && (!worst || n > worst.n)) worst = { name: e.name, n };
-    }
-    if (worst) out.push({ id: 'repeatedError', value: Math.min(1, (worst.n - 1) / 3), reason: `same ${worst.name} ×${worst.n}` });
-
-    return out;
   }
 
   // ---- event handlers ----
@@ -104,22 +64,18 @@ export class ContentSignals {
   private recordSubmit(el: Element) {
     const now = Date.now();
     // Clicking a button and the form's submit event fire together; count once.
-    if (this.lastSubmit && now - this.lastSubmit.at < 500) return;
+    if (now - this.lastSubmitAt < 500) return;
+    this.lastSubmitAt = now;
     const key = this.questionKeyFor(el);
     this.setCurrent(key);
-    const q = this.stats(key);
-    q.submits.push(now);
     const answer = this.answerValue(el);
-    if (answer !== null) {
-      if (q.lastAnswer !== null && answer !== q.lastAnswer) q.answerChanges.push(now);
-      q.lastAnswer = answer;
-    }
-    this.lastSubmit = { at: now, key };
+    this.log?.add(`submitted ${key}${answer ? `: "${answer.slice(0, 160)}"` : ''}`);
   }
 
+  // Error output (stack traces, compiler errors) goes in the log so the tutor can see it.
   private onMutations = (records: MutationRecord[]) => {
     const now = Date.now();
-    const afterSubmit = this.lastSubmit && now - this.lastSubmit.at < FEEDBACK_WINDOW_MS;
+    if (now - this.lastErrorAt < 1000) return;
     for (const r of records) {
       const nodes: Node[] = r.type === 'characterData' ? [r.target] : Array.from(r.addedNodes);
       for (const node of nodes) {
@@ -127,56 +83,21 @@ export class ContentSignals {
         if (!el || el.closest('#gongo-root')) continue;
         const text = (node.textContent ?? '').trim();
         if (!text || text.length > 2000) continue;
-
-        if (afterSubmit && this.lastSubmit) {
-          const looksWrong = INCORRECT_RE.test(text) || (ERROR_CLASS_RE.test(el.className?.toString?.() ?? '') && text.length < 200);
-          if (CORRECT_RE.test(text) && !INCORRECT_RE.test(text)) {
-            this.resetQuestion(this.lastSubmit.key);
-          } else if (looksWrong && now - this.lastIncorrectAt > 1000) {
-            this.stats(this.lastSubmit.key).incorrect.push(now);
-            this.lastIncorrectAt = now;
-          }
+        const line = text.split('\n').find((l) => ERROR_RE.test(l));
+        if (line) {
+          this.lastErrorAt = now;
+          this.log?.add(`error shown: "${line.trim().slice(0, 140)}"`);
+          return;
         }
-
-        const m = text.match(ERROR_RE);
-        if (m) this.recordError(m[1] ?? m[0].trim(), text);
       }
     }
   };
-
-  private recordError(name: string, text: string) {
-    // Same error, different line numbers → same hash.
-    const firstLine = text.split('\n').find((l) => ERROR_RE.test(l)) ?? text;
-    const key = firstLine.replace(/\d+/g, '#').replace(/\s+/g, ' ').slice(0, 160);
-    const now = Date.now();
-    const entry = this.errorCounts.get(key) ?? { name, times: [] };
-    if (now - (entry.times[entry.times.length - 1] ?? 0) > 1000) entry.times.push(now);
-    this.errorCounts.set(key, entry);
-  }
-
-  private resetQuestion(key: string) {
-    const q = this.stats(key);
-    q.incorrect = [];
-    q.submits = [];
-    q.answerChanges = [];
-    this.errorCounts.clear();
-    this.lastProgressAt = Date.now();
-  }
 
   private setCurrent(key: string) {
     if (key !== this.current) {
       this.current = key;
       this.lastProgressAt = Date.now();
     }
-  }
-
-  private stats(key: string): QuestionStats {
-    let q = this.questions.get(key);
-    if (!q) {
-      q = { label: key, submits: [], incorrect: [], answerChanges: [], lastAnswer: null };
-      this.questions.set(key, q);
-    }
-    return q;
   }
 
   /** Nearest "Q4"/"Question 4"/"Problem 2" label, else the nearest heading, else the page title. */
@@ -198,7 +119,7 @@ export class ContentSignals {
   private answerValue(el: Element): string | null {
     const scope = el.closest('form') ?? el.closest('section, article, fieldset, div') ?? this.doc.body;
     const fields = scope.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-      'input:not([type=submit]):not([type=button]):not([type=hidden]), textarea, [contenteditable=true]',
+      'input:not([type=submit]):not([type=button]):not([type=hidden]):not([type=password]), textarea, [contenteditable=true]',
     );
     if (fields.length === 0) return null;
     return Array.from(fields)

@@ -137,9 +137,9 @@ export function Timeline({ state }: { state: PanelState }) {
           <p className="small muted">Nothing notable right now.</p>
         )}
         <div className="meters">
-          {(['content', 'activity', 'face'] as Channel[]).map((c) => (
+          {(['activity', 'face'] as Channel[]).map((c) => (
             <div key={c} className="meter">
-              <span className="small">{c === 'content' ? 'Page content' : c === 'activity' ? 'Activity' : 'Face'}</span>
+              <span className="small">{c === 'activity' ? 'Page activity' : 'Face'}</span>
               <div className="meter-track">
                 <div className="meter-fill" style={{ width: `${Math.round(state.output.channels[c] * 100)}%` }} />
               </div>
@@ -147,7 +147,7 @@ export function Timeline({ state }: { state: PanelState }) {
             </div>
           ))}
         </div>
-        <p className="small muted">Weights: content 50% · activity 30% · face 20%</p>
+        <p className="small muted">The score blends page activity and your face; either one can raise it on its own.</p>
       </div>
 
       {(state.devMode || state.labelMode) && (

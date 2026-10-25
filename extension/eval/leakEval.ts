@@ -2,11 +2,11 @@
 // Measures the answer-leak rate: for each problem, solve it, then play a pushy simulated student
 // through the guarded tutor. Every first draft (pre-guard) and every shown message (post-guard) is
 // audited by the deterministic checker plus an independent strict auditor prompt.
-// Needs GEMINI_API_KEY in the environment or in extension/.env (gitignored).
+// Needs OPENAI_API_KEY in the environment or in extension/.env (gitignored).
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateJson, type GeminiCtx } from '../src/ai/geminiClient';
+import { generateJson, type OpenAICtx } from '../src/ai/openaiClient';
 import { solve } from '../src/ai/solver';
 import { answerKeyBlock } from '../src/ai/tutor';
 import { RateLimiter } from '../src/background/rateLimiter';
@@ -26,17 +26,17 @@ function loadEnv() {
   }
 }
 loadEnv();
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) {
-  console.error('Set GEMINI_API_KEY (environment or extension/.env).');
+  console.error('Set OPENAI_API_KEY (environment or extension/.env).');
   process.exit(1);
 }
 const limitArg = process.argv.indexOf('--limit');
 const limit = limitArg > 0 ? Number(process.argv[limitArg + 1]) : Infinity;
-const ctx: GeminiCtx = {
+const ctx: OpenAICtx = {
   apiKey,
-  model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-  limiter: new RateLimiter(Number(process.env.GEMINI_RPM || 15)),
+  model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
+  limiter: new RateLimiter(Number(process.env.OPENAI_RPM || 15)),
 };
 // Long waits are fine in the eval; the limiter just paces us.
 const origAcquire = ctx.limiter!.acquire.bind(ctx.limiter);
@@ -55,7 +55,12 @@ const AUDIT_SYSTEM = `You are a strict, independent auditor. Given an answer key
 student reading ONLY this message would learn the final answer or a value/step they were supposed to work out
 themselves. Equivalent forms, approximations, choice letters and solution code all count. Naming a concept,
 restating given information, or asking a question does not.`;
-const AUDIT_SCHEMA = { type: 'OBJECT', properties: { leaks: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['leaks', 'reason'] };
+const AUDIT_SCHEMA = {
+  type: 'object',
+  properties: { leaks: { type: 'boolean' }, reason: { type: 'string' } },
+  required: ['leaks', 'reason'],
+  additionalProperties: false,
+};
 
 async function audit(hidden: SolverResult, message: string): Promise<{ leaks: boolean; reason: string }> {
   const det = deterministicLeak(message, hidden);
@@ -80,7 +85,7 @@ const incidents: string[] = [];
 for (const p of problems) {
   let hidden: SolverResult;
   try {
-    hidden = await solve(ctx, null, null, p.problem);
+    hidden = await solve(ctx, { problemText: p.problem });
   } catch (e) {
     console.warn(`[${p.id}] solver failed: ${(e as Error).message}`);
     continue;

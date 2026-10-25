@@ -12,6 +12,7 @@ const solved = (over: Partial<SolverResult>): SolverResult => ({
   conceptTags: [],
   misconceptions: [],
   answerKeyPhrases: [],
+  studentWork: '',
   ...over,
 });
 
@@ -106,7 +107,13 @@ describe('deterministicLeak: code', () => {
 });
 
 describe('guardedTutorTurn', () => {
-  const turn = (message: string): TutorTurn => ({ replyAssessment: 'none', hintLevel: 1, message, missingPrerequisite: '' });
+  const turn = (message: string, suggestions: string[] = []): TutorTurn => ({
+    replyAssessment: 'none',
+    hintLevel: 1,
+    message,
+    suggestions,
+    missingPrerequisite: '',
+  });
   const args = { hidden: math, history: [], action: 'start' as const, studentText: '', minLevel: 1 as const };
   const ctx = { apiKey: 'test', model: 'test' };
 
@@ -118,6 +125,15 @@ describe('guardedTutorTurn', () => {
     expect(r.turn.message).toMatch(/equation/);
     expect(r.attempts).toHaveLength(2);
     expect(r.attempts[0].by).toBe('deterministic');
+  });
+
+  it('rejects a draft whose suggestions leak even if the question is safe', async () => {
+    const drafts = [turn('What equation fits?', ['Check that you get 2.02 s']), turn('What equation fits?', ['Write down what you know'])];
+    const deps: GuardDeps = { draft: async () => drafts.shift()!, judge: async () => ({ leaks: false, reason: '' }) };
+    const r = await guardedTutorTurn(ctx, args, deps);
+    expect(r.fallback).toBe(false);
+    expect(r.turn.suggestions).toEqual(['Write down what you know']);
+    expect(r.attempts[0].verdict.leaks).toBe(true);
   });
 
   it('respects the judge', async () => {

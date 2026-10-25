@@ -1,4 +1,4 @@
-/** Sliding-window limiter so a chatty session can't burn through the Gemini quota. */
+/** Sliding-window limiter so a chatty session can't burn through the OpenAI quota. */
 export class RateLimiter {
   private calls: number[] = [];
   constructor(private maxPerWindow: number, private windowMs = 60_000) {}
