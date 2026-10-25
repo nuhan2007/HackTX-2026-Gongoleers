@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sketchpad</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; font: 14px system-ui, sans-serif; }
+      .bar { height: 44px; background: #2b2b2b; color: #eee; display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+      .bar button { background: #444; color: #eee; border: 0; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+      canvas { display: block; touch-action: none; cursor: crosshair; }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <strong>Sketchpad</strong>
+      <button id="pen" aria-pressed="true">Pen</button>
+      <button id="eraser">Eraser</button>
+      <button id="clear">Clear</button>
+      <span>Draw your work below with a mouse, pen or finger.</span>
+    </div>
+    <canvas id="pad"></canvas>
+    <script>
+      // A typical drawing app: a canvas, Pointer Events, preventDefault (so the browser sends no mouse events
+      // for pen/touch), thin strokes. Nothing here is in the DOM, only pixels.
+      const c = document.getElementById('pad');
+      const g = c.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      function fit() {
+        const keep = g.getImageData(0, 0, c.width || 1, c.height || 1);
+        c.width = innerWidth * dpr;
+        c.height = (innerHeight - 44) * dpr;
+        c.style.width = innerWidth + 'px';
+        c.style.height = innerHeight - 44 + 'px';
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, c.width, c.height);
+        g.putImageData(keep, 0, 0);
+      }
+      fit();
+      addEventListener('resize', fit);
+      let last = null;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.strokeStyle = '#111';
+      g.lineWidth = 2 * dpr;
+      c.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        c.setPointerCapture(e.pointerId);
+        last = [e.offsetX * dpr, e.offsetY * dpr];
+      });
+      c.addEventListener('pointermove', (e) => {
+        if (!last) return;
+        e.preventDefault();
+        const p = [e.offsetX * dpr, e.offsetY * dpr];
+        g.beginPath();
+        g.moveTo(last[0], last[1]);
+        g.lineTo(p[0], p[1]);
+        g.stroke();
+        last = p;
+      });
+      const up = () => (last = null);
+      c.addEventListener('pointerup', up);
+      c.addEventListener('pointercancel', up);
+      document.getElementById('pen').onclick = () => {
+        g.strokeStyle = '#111';
+        g.lineWidth = 2 * dpr;
+      };
+      document.getElementById('eraser').onclick = () => {
+        g.strokeStyle = '#fff';
+        g.lineWidth = 18 * dpr;
+      };
+      document.getElementById('clear').onclick = () => {
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, c.width, c.height);
+      };
+    </script>
+  </body>
+</html>

@@ -37,9 +37,24 @@
         <label>f′(x) = <input data-answer="30x(3x^2+1)^4|30x*(3x^2+1)^4|30*x*(3x^2+1)^4" /></label>
         <button>Check Answer</button>
         <div class="feedback" aria-live="polite"></div>
+        <p><button id="next" type="button">Next question →</button></p>
+      </section>
+
+      <section id="q5" data-question="Q5" hidden>
+        <h2>Question 5</h2>
+        <p>Find the derivative of <span class="math">h(x) = sin(x<sup>2</sup>)</span>.</p>
+        <label>h′(x) = <input data-answer="2xcos(x^2)|2x*cos(x^2)|2*x*cos(x^2)" /></label>
+        <button>Check Answer</button>
+        <div class="feedback" aria-live="polite"></div>
       </section>
     </main>
     <script>
+      // "Next question" is how a student "moves on": myTA offers to check their work when this is clicked.
+      document.getElementById('next').addEventListener('click', () => {
+        const q5 = document.getElementById('q5');
+        q5.hidden = false;
+        q5.scrollIntoView({ behavior: 'smooth' });
+      });
       const norm = (s) => s.toLowerCase().replace(/\s+/g, '').replace(/\*\*/g, '^');
       for (const sec of document.querySelectorAll('section')) {
         const input = sec.querySelector('input');

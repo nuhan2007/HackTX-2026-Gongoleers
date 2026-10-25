@@ -105,9 +105,52 @@ describe('deterministicLeak: code', () => {
   });
 });
 
+describe('deterministicLeak: harder problems (several values, LaTeX, lists)', () => {
+  it('treats a LaTeX answer as maths, not code: its numbers are still secret', () => {
+    const p = solved({ problemText: 'A 12 V source drives 5 ohms of resistance. Find the current.', finalAnswer: '$I = \\frac{12}{5} = 2.4\\text{ A}$' });
+    expect(deterministicLeak('Do you get about 2.4 amps?', p).leaks).toBe(true);
+    expect(deterministicLeak('Which law relates the voltage and the resistance?', p).leaks).toBe(false);
+  });
+  it('guards every value of an answer that gives several results', () => {
+    const p = solved({ problemText: 'Find the node voltages.', finalAnswer: 'V1 = 6.4 V, V2 = 12.5 V' });
+    expect(deterministicLeak('Is V1 about 6.4?', p).leaks).toBe(true);
+    expect(deterministicLeak('Check V2 against 12.5 volts', p).leaks).toBe(true);
+  });
+  it('guards every value of a milestone that gives several, not only the last', () => {
+    const p = solved({
+      problemText: 'Find the node voltages.',
+      finalAnswer: 'see checkpoints',
+      checkpoints: [{ label: 'both nodes', expected: 'V1 = 4.8 V, V2 = 7.3 V' }],
+    });
+    expect(deterministicLeak('Your V1 should come out near 4.8.', p).leaks).toBe(true);
+    expect(deterministicLeak('Your V2 should be 7.3.', p).leaks).toBe(true);
+    expect(deterministicLeak('Write KCL at node 1 first.', p).leaks).toBe(false);
+  });
+  it('still guards the distinctive values of an answer that is a long list of numbers', () => {
+    const p = solved({ problemText: 'Compute the vector.', finalAnswer: '(1, 2, 3, 4, 17.25)' });
+    expect(deterministicLeak('The last entry should be 17.25.', p).leaks).toBe(true);
+    expect(deterministicLeak('There are five entries; start with the first.', p).leaks).toBe(false);
+  });
+  it('does not take "d = 4" for the multiple-choice answer D', () => {
+    const p = solved({ problemText: 'Find the distance d between the points.', finalAnswer: 'd = 4.5' });
+    expect(deterministicLeak('Try labelling each point (D) and (E) on the sketch.', p).leaks).toBe(false);
+  });
+  it('lets a hint name the method or concept even if the key lists it as a phrase', () => {
+    const p = solved({
+      problemText: 'Find the voltage at each node of the circuit.',
+      finalAnswer: 'V1 = 6.4 V',
+      conceptTags: ['node voltage analysis'],
+      problemKind: 'node voltage analysis',
+      answerKeyPhrases: ['node voltage analysis', 'V1 = 6.4'],
+    });
+    expect(deterministicLeak('This is a job for node voltage analysis: where would you start?', p).leaks).toBe(false);
+    expect(deterministicLeak('So V1 = 6.4, then?', p).leaks).toBe(true);
+  });
+});
+
 describe('guardedTutorTurn', () => {
   const turn = (message: string): TutorTurn => ({ replyAssessment: 'none', hintLevel: 1, message, missingPrerequisite: '' });
-  const args = { hidden: math, history: [], action: 'start' as const, studentText: '', minLevel: 1 as const };
+  const args = { hidden: math, history: [], action: 'auto' as const, minLevel: 1 as const };
   const ctx = { apiKey: 'test', model: 'test' };
 
   it('regenerates a leaking draft and returns the safe one', async () => {

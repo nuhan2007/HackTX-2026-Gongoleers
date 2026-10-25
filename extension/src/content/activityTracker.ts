@@ -14,12 +14,26 @@ export class ActivityTracker {
   private keys: { t: number; del: boolean }[] = [];
   private selections: { t: number; text: string }[] = [];
   private lastY = 0;
+  /** The press in progress: it becomes a click only if it ends without much movement, otherwise it was a drag (a stroke). */
+  private press: { x: number; y: number; t: number; moved: number } | null = null;
+  /** Running totals for the page (see PageStats). */
+  keyTotal = 0;
+  pointerTotal = 0;
 
-  constructor(private win: Window = window) {
+  /**
+   * `onInput` is told when the student does something that changes their work (a key press or the end of a stroke), so the page can report
+   * it straight away instead of at the next tick: the first look at the new line then starts when they stop, not a second later.
+   */
+  constructor(private win: Window = window, private onInput?: () => void) {
     const opts = { capture: true, passive: true } as const;
     win.addEventListener('scroll', this.onScroll, opts);
-    win.addEventListener('mousemove', this.onMove, opts);
-    win.addEventListener('mousedown', this.onClick, opts);
+    // Pointer events, not mouse events: a drawing app cancels `pointerdown` (so the page gets no mouse events at
+    // all for that stroke, mouse included, per the Pointer Events spec), but a capture listener on the window
+    // still sees every pointer event, whether it came from a mouse, a pen or a finger.
+    win.addEventListener('pointermove', this.onMove, opts);
+    win.addEventListener('pointerdown', this.onDown, opts);
+    win.addEventListener('pointerup', this.onUp, opts);
+    win.addEventListener('pointercancel', this.onCancel, opts);
     win.addEventListener('keydown', this.onKey, opts);
     win.addEventListener('mouseup', this.onSelect, opts);
     win.addEventListener('touchstart', this.touch, opts);
@@ -29,13 +43,19 @@ export class ActivityTracker {
   dispose(): void {
     for (const [ev, fn] of [
       ['scroll', this.onScroll],
-      ['mousemove', this.onMove],
-      ['mousedown', this.onClick],
+      ['pointermove', this.onMove],
+      ['pointerdown', this.onDown],
+      ['pointerup', this.onUp],
+      ['pointercancel', this.onCancel],
       ['keydown', this.onKey],
       ['mouseup', this.onSelect],
       ['touchstart', this.touch],
     ] as const)
       this.win.removeEventListener(ev, fn as EventListener, true);
+  }
+
+  get scrollY(): number {
+    return this.win.scrollY;
   }
 
   get idleMs(): number {
@@ -98,6 +118,14 @@ export class ActivityTracker {
     this.lastInputAt = Date.now();
   };
 
+  /**
+   * An event that came from the sprite itself (a click on its buttons, a drag of its bubble). The page sees those retargeted to the sprite's
+   * host element. They are the student being here (so `touch()` still counts), but they are not "mouse wandering", "rapid clicks" or work.
+   */
+  private fromSprite(e: Event): boolean {
+    return (e.target as Element | null)?.id === 'myta-root';
+  }
+
   private onScroll = () => {
     this.touch();
     const y = this.win.scrollY;
@@ -110,22 +138,56 @@ export class ActivityTracker {
     this.lastY = y;
   };
 
-  private onMove = (e: MouseEvent) => {
+  private onMove = (e: PointerEvent) => {
     this.touch();
+    if (this.fromSprite(e)) return;
+    if (e.buttons) {
+      // In contact (pressed, or a pen/finger touching): drawing or selecting. That is work, not wandering, so it
+      // counts as input but stays out of the aimless-mouse analysis below.
+      this.pointerTotal++;
+      if (this.press) this.press.moved = Math.max(this.press.moved, Math.hypot(e.screenX - this.press.x, e.screenY - this.press.y));
+      return;
+    }
     const now = Date.now();
     const last = this.moves[this.moves.length - 1];
     if (!last || now - last.t > 50) this.moves.push({ t: now, x: e.screenX, y: e.screenY });
   };
 
-  private onClick = (e: MouseEvent) => {
+  private onDown = (e: PointerEvent) => {
     this.touch();
-    this.clicks.push({ t: Date.now(), x: e.screenX, y: e.screenY });
+    if (this.fromSprite(e)) return;
+    this.pointerTotal++;
+    this.press = { x: e.screenX, y: e.screenY, t: Date.now(), moved: 0 };
+  };
+
+  /** A press that ends where it began, quickly, is a click (and rapid repeats are rage clicks). A stroke is not. */
+  private onUp = (e: PointerEvent) => {
+    this.touch();
+    if (this.fromSprite(e)) {
+      this.press = null;
+      return;
+    }
+    const p = this.press;
+    this.press = null;
+    if (p && p.moved < 12 && Date.now() - p.t < 700) this.clicks.push({ t: Date.now(), x: e.screenX, y: e.screenY });
+    // The end of a stroke or a click on the page is when what's on screen has changed: report it now.
+    this.onInput?.();
+  };
+
+  private onCancel = () => {
+    this.press = null;
   };
 
   private onKey = (e: KeyboardEvent) => {
     this.touch();
-    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')
-      this.keys.push({ t: Date.now(), del: e.key === 'Backspace' || e.key === 'Delete' });
+    if (this.fromSprite(e)) return;
+    // Browser autofill and some password managers dispatch keydown events with no `key`.
+    const key = e.key ?? '';
+    if (key.length === 1 || key === 'Backspace' || key === 'Delete') {
+      this.keyTotal++;
+      this.keys.push({ t: Date.now(), del: key === 'Backspace' || key === 'Delete' });
+      this.onInput?.();
+    }
   };
 
   private onSelect = () => {

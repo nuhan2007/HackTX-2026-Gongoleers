@@ -1,15 +1,55 @@
 // Live confusion timeline: one series (score), threshold reference line, crosshair tooltip,
 // and the stacked reasons. A table view is available for screen readers / exact values.
-import { useEffect, useRef, useState } from 'react';
-import { DEMO_TRIGGER } from '../shared/constants';
-import { send, type PanelState } from '../shared/messages';
-import { getSettings } from '../shared/settings';
-import type { Channel, TimelinePoint } from '../shared/types';
+import { useRef, useState } from 'react';
+import { send, type PanelState, type TriggerView } from '../shared/messages';
+import { Eyes } from './Eyes';
+import type { Channel, TimelinePoint, TriggerPhase } from '../shared/types';
 
 const W = 320;
 const H = 140;
 const PAD = { l: 28, r: 8, t: 10, b: 20 };
 const WINDOW_MS = 180_000;
+
+/** The one rule for when the sprite appears, and where its timer stands right now. */
+function TriggerLine({ t, score, phase }: { t: TriggerView; score: number; phase: TriggerPhase }) {
+  const why =
+    t.difficulty !== null && t.extraSec > 0
+      ? ` (${t.baseSec}s, plus ${t.extraSec}s for this problem: rated ${t.difficulty} out of 5 for difficulty${t.tuning ? ', and myTA adapted to what kind of work it is' : ''})`
+      : t.difficulty !== null
+        ? ` (this problem is rated ${t.difficulty} out of 5 for difficulty)`
+        : '';
+  const rule = `The sprite appears when the score stays at or above ${t.threshold} for ${t.durationSec} seconds${why}.`;
+  const status =
+    t.paused === 'off'
+      ? 'myTA is off.'
+      : t.paused === 'snoozed'
+        ? 'Snoozed, so the sprite won\'t appear.'
+        : t.paused === 'no-camera'
+          ? 'Paused: the camera is off, so there\'s no score to watch.'
+          : t.paused === 'chatting'
+            ? 'Paused while you\'re chatting with myTA.'
+            : phase === 'confused'
+              ? 'The sprite is showing now.'
+              : t.cooldownLeftSec > 0
+                ? `Resting after the last nudge: ${t.cooldownLeftSec}s before it can appear again.`
+                : t.aboveSec !== null
+                  ? `At or above ${t.threshold} for ${t.aboveSec}s of ${t.durationSec}s…`
+                  : `Score ${score} is below ${t.threshold}, so the timer isn't running.`;
+  const running = t.paused === null && t.aboveSec !== null && phase !== 'confused';
+  return (
+    <>
+      <p className="small">{rule}</p>
+      <p className="small muted" aria-live="polite">
+        {status}
+      </p>
+      {running && (
+        <div className="trigger-bar" role="progressbar" aria-valuemin={0} aria-valuemax={t.durationSec} aria-valuenow={Math.min(t.aboveSec!, t.durationSec)}>
+          <div style={{ width: `${Math.min(100, ((t.aboveSec ?? 0) / t.durationSec) * 100)}%` }} />
+        </div>
+      )}
+    </>
+  );
+}
 
 export function Timeline({ state }: { state: PanelState }) {
   const [hover, setHover] = useState<TimelinePoint | null>(null);
@@ -17,12 +57,7 @@ export function Timeline({ state }: { state: PanelState }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const pts = state.timeline;
   const now = pts.length ? pts[pts.length - 1].t : Date.now();
-  const [threshold, setThreshold] = useState<number | null>(null);
-
-  // Threshold comes from settings; read once.
-  useEffect(() => {
-    getSettings().then((s) => setThreshold(s.demoMode ? DEMO_TRIGGER.threshold : s.threshold));
-  }, []);
+  const threshold = state.trigger.threshold;
 
   const x = (t: number) => PAD.l + ((t - (now - WINDOW_MS)) / WINDOW_MS) * (W - PAD.l - PAD.r);
   const y = (v: number) => PAD.t + (1 - v / 100) * (H - PAD.t - PAD.b);
@@ -44,9 +79,8 @@ export function Timeline({ state }: { state: PanelState }) {
           <div className="spacer" />
           <span className="hero-num small-hero">{state.output.score}</span>
         </div>
-        <p className="small muted">
-          Last 3 minutes · {state.phase === 'rising' ? 'above threshold, timer running' : state.phase === 'confused' ? 'nudge shown' : state.phase === 'cooldown' ? 'cooling down' : 'watching'}
-        </p>
+        <TriggerLine t={state.trigger} score={state.output.score} phase={state.phase} />
+        <p className="small muted">Last 3 minutes</p>
         {asTable ? (
           <table className="small data-table">
             <thead>
@@ -91,14 +125,12 @@ export function Timeline({ state }: { state: PanelState }) {
               <text x={W - PAD.r} y={H - 4} textAnchor="end" className="axis">
                 now
               </text>
-              {threshold !== null && (
-                <g>
-                  <line x1={PAD.l} x2={W - PAD.r} y1={y(threshold)} y2={y(threshold)} stroke="var(--ink-3)" strokeDasharray="4 3" strokeWidth={1} />
-                  <text x={W - PAD.r} y={y(threshold) - 4} textAnchor="end" className="axis">
-                    trigger {threshold}
-                  </text>
-                </g>
-              )}
+              <g>
+                <line x1={PAD.l} x2={W - PAD.r} y1={y(threshold)} y2={y(threshold)} stroke="var(--ink-3)" strokeDasharray="4 3" strokeWidth={1} />
+                <text x={W - PAD.r} y={y(threshold) - 4} textAnchor="end" className="axis">
+                  trigger {threshold}
+                </text>
+              </g>
               <path d={path} fill="none" stroke="var(--chart-line)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               {pts.length > 0 && (
                 <circle cx={x(now)} cy={y(pts[pts.length - 1].score)} r={4} fill="var(--chart-line)" stroke="var(--surface)" strokeWidth={2} />
@@ -149,6 +181,8 @@ export function Timeline({ state }: { state: PanelState }) {
         </div>
         <p className="small muted">Weights: content 50% · activity 30% · face 20%</p>
       </div>
+
+      <Eyes eyes={state.eyes} finish={state.finish} />
 
       {(state.devMode || state.labelMode) && (
         <div className="card">

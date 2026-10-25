@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Linear equations · practice</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      A stand-in for a site like Khan Academy, for trying myTA: one problem at a time, the next one swapped in on the same
+      address with no question number, "Not quite" / "Correct!" feedback. Pair it with /sketch.html (the drawing board) in a
+      second window: write the solution there, type the answer here.
+    -->
+    <style>
+      body { margin: 0; font-family: Lato, system-ui, sans-serif; background: #f7f8fa; color: #21242c; }
+      header { background: #0b2a4a; color: #fff; padding: 14px 24px; font-weight: 700; }
+      main { max-width: 640px; margin: 28px auto; padding: 0 20px; }
+      .card { background: #fff; border: 1px solid #dcdee3; border-radius: 8px; padding: 24px; }
+      .step { color: #5b616e; font-size: 14px; margin: 0 0 8px; }
+      .problem { font-size: 22px; margin: 6px 0 18px; }
+      label { font-size: 18px; }
+      input { font: inherit; font-size: 18px; width: 140px; padding: 8px 10px; border: 2px solid #9aa0ad; border-radius: 6px; }
+      button { font: 700 16px system-ui, sans-serif; padding: 10px 20px; border: 0; border-radius: 6px; cursor: pointer; background: #1865f2; color: #fff; }
+      button.secondary { background: #fff; color: #1865f2; border: 2px solid #1865f2; }
+      .row { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
+      .feedback { margin-top: 16px; font-weight: 700; min-height: 24px; }
+      .feedback.correct { color: #0a7a3d; }
+      .feedback.incorrect { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <header>Linear equations · Practice</header>
+    <main>
+      <div class="card">
+        <p class="step" id="step"></p>
+        <p class="problem" id="problem"></p>
+        <label>x = <input id="answer" autocomplete="off" /></label>
+        <div class="feedback" id="feedback" aria-live="polite"></div>
+        <div class="row">
+          <button id="check">Check</button>
+          <button id="next" class="secondary">Next question</button>
+        </div>
+      </div>
+    </main>
+    <script>
+      const problems = [
+        { text: 'Solve for x:  3x + 5 = 20', answer: '5' },
+        { text: 'Solve for x:  2x − 4 = 10', answer: '7' },
+        { text: 'Solve for x:  x / 3 + 2 = 6', answer: '12' },
+      ];
+      let i = 0;
+      const $ = (id) => document.getElementById(id);
+      function show() {
+        $('step').textContent = 'Practice';
+        $('problem').textContent = problems[i % problems.length].text;
+        $('answer').value = '';
+        $('feedback').textContent = '';
+        $('feedback').className = 'feedback';
+      }
+      $('check').addEventListener('click', () => {
+        const ok = $('answer').value.trim() === problems[i % problems.length].answer;
+        $('feedback').className = 'feedback';
+        $('feedback').textContent = '';
+        // re-render the feedback like a real site, so it is a fresh change on the page each time
+        setTimeout(() => {
+          $('feedback').className = 'feedback ' + (ok ? 'correct' : 'incorrect');
+          $('feedback').textContent = ok ? 'Correct!' : 'Not quite. Check your work and try again.';
+        }, 250);
+      });
+      $('next').addEventListener('click', () => {
+        i++;
+        show();
+      });
+      show();
+    </script>
+  </body>
+</html>

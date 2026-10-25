@@ -1,20 +1,30 @@
-// Picks the best candidate video and the exact segment that explains the concept.
-// Primary path: Gemini watches the public YouTube URL. Fallback: titles/descriptions/chapters only.
+// Picks the best candidate video and the moment that explains the concept. SerpApi finds the videos; Gemini then chooses one
+// from the search results (titles, descriptions, lengths and chapters), and, when the video has no chapters to say where the
+// explanation starts, actually WATCHES it (Gemini takes a public YouTube address) and reports the minute the concept is explained.
+// The sprite shows that moment in parentheses next to "Watch it", and the clip opens at it.
 import type { VideoCandidate } from '../serp/youtube';
 import type { VideoMoment } from '../shared/types';
-import { generateJson, type GeminiCtx } from './geminiClient';
-import { VIDEO_PICK_SYSTEM, VIDEO_SYSTEM } from './prompts';
-import { VIDEO_PICK_SCHEMA, VIDEO_SCHEMA } from './schemas';
+import { generateJson, type LlmCtx } from './llmClient';
+import { VIDEO_MOMENT_SYSTEM, VIDEO_PICK_SYSTEM } from './prompts';
+import { VIDEO_MOMENT_SCHEMA, VIDEO_PICK_SCHEMA } from './schemas';
 
-interface VideoReview {
-  relevance: number;
-  startSec: number;
-  endSec: number;
-  why: string;
-  showsSolutionToProblem: boolean;
+/** Longest video Gemini is asked to watch: past this the time and cost aren't worth it for one moment. */
+const MAX_WATCH_SEC = 25 * 60;
+
+/** "2:14", "1:02:03", "134", "2m14s" and "134s" all mean the same kind of thing; anything else is NaN. */
+export function parseClock(s: unknown): number {
+  if (typeof s === 'number') return Number.isFinite(s) ? Math.max(0, Math.round(s)) : NaN;
+  if (typeof s !== 'string') return NaN;
+  const t = s.trim().toLowerCase();
+  const units = t.match(/^(?:(\d+)h)?\s*(?:(\d+)m(?:in)?)?\s*(?:(\d+)s(?:ec)?)?$/);
+  if (units && (units[1] || units[2] || units[3])) return Number(units[1] ?? 0) * 3600 + Number(units[2] ?? 0) * 60 + Number(units[3] ?? 0);
+  const clock = t.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (clock) return clock[3] !== undefined ? Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]) : Number(clock[1]) * 60 + Number(clock[2]);
+  return /^\d+$/.test(t) ? Number(t) : NaN;
 }
 
-function clampSegment(c: VideoCandidate, start: number, end: number): { start: number; end: number } {
+/** Keeps a segment inside the video and a sensible length. */
+export function clampSegment(c: Pick<VideoCandidate, 'lengthSec'>, start: number, end: number): { start: number; end: number } {
   const len = c.lengthSec || Number.MAX_SAFE_INTEGER;
   const s = Math.max(0, Math.min(Math.round(start) || 0, len - 30));
   let e = Math.round(end) || s + 240;
@@ -22,21 +32,7 @@ function clampSegment(c: VideoCandidate, start: number, end: number): { start: n
   return { start: s, end: Math.min(e, len, s + 10 * 60) };
 }
 
-async function reviewVideo(ctx: GeminiCtx, c: VideoCandidate, concept: string, problemText: string): Promise<VideoReview> {
-  return generateJson<VideoReview>(ctx, {
-    system: VIDEO_SYSTEM,
-    parts: [
-      { fileData: { fileUri: `https://www.youtube.com/watch?v=${c.videoId}` } },
-      { text: `Concept the student needs: ${concept}\nThe student's problem (do not pick a segment that solves it): ${problemText.slice(0, 600)}` },
-    ],
-    schema: VIDEO_SCHEMA,
-    temperature: 0.1,
-    timeoutMs: 45_000,
-    lowMediaResolution: true,
-  });
-}
-
-async function pickFromMetadata(ctx: GeminiCtx, cands: VideoCandidate[], concept: string) {
+async function pickFromMetadata(ctx: LlmCtx, cands: VideoCandidate[], concept: string) {
   const list = cands
     .map(
       (c, i) =>
@@ -49,19 +45,38 @@ async function pickFromMetadata(ctx: GeminiCtx, cands: VideoCandidate[], concept
     system: VIDEO_PICK_SYSTEM,
     parts: [{ text: `Concept: ${concept}\n\nResults:\n${list}` }],
     schema: VIDEO_PICK_SCHEMA,
+    schemaName: 'video_pick',
+    kind: 'video',
+    effort: 'minimal',
+    maxTokens: 1500,
     temperature: 0.1,
-    timeoutMs: 12_000,
+    timeoutMs: 30_000,
   });
 }
 
-export async function findVideoMoment(
-  ctx: GeminiCtx,
-  candidates: VideoCandidate[],
-  concept: string,
-  problemText: string,
-): Promise<VideoMoment> {
+/** Gemini watches the video and says where the concept is explained. Null when it can't, or the video doesn't explain it. */
+export async function watchForMoment(ctx: LlmCtx, c: VideoCandidate, concept: string): Promise<{ start: number; end: number; why: string } | null> {
+  const r = await generateJson<{ explainsIt: boolean; start: string; end: string; why: string }>(ctx, {
+    system: VIDEO_MOMENT_SYSTEM,
+    parts: [{ video: `https://www.youtube.com/watch?v=${c.videoId}` }, { text: `Concept the student needs: ${concept}\nThe video is ${c.lengthSec ? `${Math.round(c.lengthSec / 60)} minutes long` : 'of unknown length'}.` }],
+    schema: VIDEO_MOMENT_SCHEMA,
+    schemaName: 'video_moment',
+    kind: 'video-watch',
+    effort: 'low',
+    maxTokens: 2000,
+    temperature: 0.1,
+    lowMediaResolution: true,
+    timeoutMs: 60_000,
+  });
+  const start = parseClock(r.start);
+  if (!r.explainsIt || !Number.isFinite(start)) return null;
+  if (c.lengthSec && start >= c.lengthSec - 20) return null;
+  const end = parseClock(r.end);
+  return { start, end: Number.isFinite(end) && end > start ? end : start + 180, why: (r.why ?? '').trim() };
+}
+
+export async function findVideoMoment(ctx: LlmCtx, candidates: VideoCandidate[], concept: string): Promise<VideoMoment> {
   if (candidates.length === 0) throw new Error('No suitable videos found for this concept.');
-  const top = candidates.slice(0, 3);
   const moment = (c: VideoCandidate, start: number, end: number, why: string, source: VideoMoment['source']): VideoMoment => ({
     videoId: c.videoId,
     title: c.title,
@@ -70,24 +85,29 @@ export async function findVideoMoment(
     why: why || `How ${concept} works`,
     concept,
     source,
+    lengthSec: c.lengthSec || undefined,
   });
 
-  // Gemini watches the top candidates in parallel; any failure (unsupported, too long, timeout) just drops that one.
-  const reviews = await Promise.allSettled(top.map((c) => reviewVideo(ctx, c, concept, problemText)));
-  let best: { c: VideoCandidate; r: VideoReview } | null = null;
-  reviews.forEach((res, i) => {
-    if (res.status !== 'fulfilled' || res.value.showsSolutionToProblem) return;
-    if (!best || res.value.relevance > best.r.relevance) best = { c: top[i], r: res.value };
-  });
-  const chosen = best as { c: VideoCandidate; r: VideoReview } | null;
-  if (chosen && chosen.r.relevance >= 0.4) return moment(chosen.c, chosen.r.startSec, chosen.r.endSec, chosen.r.why, 'gemini-video');
-
+  let pick: { index: number; startSec: number; endSec: number; why: string } | null = null;
   try {
-    const p = await pickFromMetadata(ctx, candidates.slice(0, 6), concept);
-    const c = candidates[Math.max(0, Math.min(candidates.length - 1, p.index))];
-    return moment(c, p.startSec, p.endSec, p.why, 'metadata');
+    pick = await pickFromMetadata(ctx, candidates.slice(0, 6), concept);
   } catch {
-    const c = candidates[0];
-    return moment(c, c.chapters[0]?.startSec ?? 0, 300, '', 'metadata');
+    /* the text pick failed: the first candidate is still a fine guess */
   }
+  const c = candidates[Math.max(0, Math.min(candidates.length - 1, pick?.index ?? 0))];
+  const chapterStart = c.chapters.find((ch) => pick && Math.abs(ch.startSec - pick.startSec) <= 3);
+
+  // The video's own chapters say where an explanation starts, when the pick landed on one.
+  if (pick && chapterStart) return moment(c, chapterStart.startSec, pick.endSec, pick.why, 'chapters');
+
+  // Otherwise, watch it. A long video, or one Gemini can't open, falls back to what the search result said.
+  if (!c.lengthSec || c.lengthSec <= MAX_WATCH_SEC) {
+    try {
+      const w = await watchForMoment(ctx, c, concept);
+      if (w) return moment(c, w.start, w.end, w.why || pick?.why || '', 'video');
+    } catch {
+      /* the metadata pick below is the fallback */
+    }
+  }
+  return moment(c, pick?.startSec ?? c.chapters[0]?.startSec ?? 0, pick?.endSec ?? 300, pick?.why ?? '', 'metadata');
 }

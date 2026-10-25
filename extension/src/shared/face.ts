@@ -3,6 +3,9 @@
 // (Kept separate from faceSignals.ts so the service worker never loads MediaPipe.)
 import { FaceLandmarker, FilesetResolver, type FaceLandmarkerResult } from '@mediapipe/tasks-vision';
 import type { RawFace } from './faceSignals';
+import { silenceMediaPipeNotices } from './quietConsole';
+
+silenceMediaPipeNotices();
 
 export async function createLandmarker(): Promise<FaceLandmarker> {
   const fileset = await FilesetResolver.forVisionTasks(chrome.runtime.getURL('mediapipe/wasm'));

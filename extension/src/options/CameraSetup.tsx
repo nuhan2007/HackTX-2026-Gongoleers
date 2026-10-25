@@ -29,12 +29,12 @@ export function CameraSetup({ settings, onChange }: { settings: Settings; onChan
         await videoRef.current.play();
       }
       await onChange({ cameraGranted: true });
-      setStatus('Camera allowed. Now calibrate so Gongo learns your neutral face.');
+      setStatus('Camera allowed. Now calibrate so myTA learns your neutral face.');
     } catch (e) {
       await onChange({ cameraGranted: false });
       setError(
         e instanceof DOMException && e.name === 'NotAllowedError'
-          ? 'Camera permission was blocked. Click the camera icon in the address bar to allow it, then try again. Gongo needs the camera to work.'
+          ? 'Camera permission was blocked. Click the camera icon in the address bar to allow it, then try again. myTA needs the camera to work.'
           : `Couldn't start the camera: ${e instanceof Error ? e.message : e}`,
       );
     }
@@ -95,7 +95,7 @@ export function CameraSetup({ settings, onChange }: { settings: Settings; onChan
     <section className="card">
       <h2>2. Camera (required)</h2>
       <p className="small muted">
-        Gongo uses your webcam to notice signs of confusion (a furrowed brow, a head tilt). Video is processed on this device and never stored or
+        myTA uses your webcam to notice signs of confusion (a furrowed brow, a head tilt). Video is processed on this device and never stored or
         sent anywhere.
       </p>
       <div className="cam-row">

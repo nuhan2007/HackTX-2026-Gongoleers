@@ -1,4 +1,4 @@
-// Deterministic answer-leak check: runs before the Gemini judge and catches the obvious
+// Deterministic answer-leak check: runs before the model judge and catches the obvious
 // cases (equivalent numbers, the answer string, solution code lines, MC letters, key phrases).
 import type { SolverResult } from '../shared/types';
 
@@ -47,21 +47,56 @@ function sameNumber(answer: number, said: number): boolean {
 }
 
 const LOOKS_LIKE_CODE = /[;{}]|\breturn\b|\bfor\s*\(|\bwhile\s*\(|\bdef\s|\bpublic\s|=\s*new\s/;
+
+/** Code, not maths written in LaTeX: "\\frac{12}{4}" and "x^{2}" have braces too, but they are formulas, and their numbers are the answer. */
+function isCode(answer: string): boolean {
+  const withoutLatex = answer
+    .replace(/\$+[^$]*\$+/g, ' ')
+    .replace(/\\[A-Za-z]+(?:\s*\{[^{}]*\})*/g, ' ')
+    .replace(/[\^_]\{[^{}]*\}/g, ' ');
+  return LOOKS_LIKE_CODE.test(withoutLatex);
+}
 const KEYWORDS = new Set(
   'public private protected static void return class new this while for else true false null final int double boolean string char long float print println system out args main length size'.split(' '),
 );
 
+/**
+ * The values a milestone gives away ("V1 = 4.8 V"): numbers on the right of the last "=" in each checkpoint. Small whole numbers are left out,
+ * since a hint that says "node 2" or "the 4 ohm resistor" must not be mistaken for one.
+ */
+function checkpointValues(hidden: SolverResult): number[] {
+  const out: number[] = [];
+  const secret = (n: number) => !Number.isInteger(n) || Math.abs(n) >= 5;
+  for (const c of hidden.checkpoints ?? []) {
+    const rhs = c.expected.includes('=') ? c.expected.slice(c.expected.lastIndexOf('=') + 1) : c.expected;
+    // A whole milestone that is one short value is as good as the answer; an equation's right side is only the part after "=".
+    for (const n of extractNumbers(rhs)) if (secret(n)) out.push(n);
+    // A milestone that gives several values ("V1 = 4.8 V, V2 = 12 V") gives away the one after each "=", not just the last.
+    for (const n of assignmentValues(c.expected)) if (secret(n)) out.push(n);
+  }
+  return out;
+}
+
+/** The values of an answer that gives several results ("V1 = 6 V, V2 = 12 V"): each one is as secret as a single answer would be. */
+function assignmentValues(answer: string): number[] {
+  if (isCode(answer)) return [];
+  return [...answer.replace(/[−–]/g, '-').matchAll(/=\s*(-?\d+(?:\.\d+)?(?:e[-+]?\d+)?)/gi)].map((m) => Number(m[1])).filter(Number.isFinite);
+}
+
 export function deterministicLeak(message: string, hidden: SolverResult): LeakVerdict {
   const msg = normalize(message);
   const problem = normalize(hidden.problemText);
-  const problemNums = extractNumbers(hidden.problemText);
+  const problemNums = [...extractNumbers(hidden.problemText), ...extractNumbers(hidden.givens ?? '')];
   const inProblem = (n: number) => problemNums.some((p) => p === n);
 
-  // 1. Numbers from the final answer and key phrases (intermediate results), ignoring ones given in the problem.
+  // 1. Numbers from the final answer, key phrases and milestones (intermediate results), ignoring ones given in the problem.
   // Code and long expressions are matched as strings below instead; their constants (i = 0, 2x+3) are too common.
   const answerNums = extractNumbers(hidden.finalAnswer);
-  const numericAnswer = !LOOKS_LIKE_CODE.test(hidden.finalAnswer) && answerNums.length <= 3;
-  const secretNums = [...(numericAnswer ? answerNums : []), ...hidden.answerKeyPhrases.flatMap(extractNumbers)].filter(
+  const answerIsCode = isCode(hidden.finalAnswer);
+  const numericAnswer = !answerIsCode && answerNums.length <= 3;
+  // A long list of numbers (a table, a vector of results) can't have every small whole number in it counted, but its distinctive values still can.
+  const distinct = !answerIsCode && answerNums.length > 3 ? answerNums.filter((n) => !Number.isInteger(n) || Math.abs(n) >= 10) : [];
+  const secretNums = [...(numericAnswer ? answerNums : distinct), ...assignmentValues(hidden.finalAnswer), ...hidden.answerKeyPhrases.flatMap(extractNumbers), ...checkpointValues(hidden)].filter(
     (n) => !inProblem(n),
   );
   const saidNums = extractNumbers(message);
@@ -78,7 +113,9 @@ export function deterministicLeak(message: string, hidden: SolverResult): LeakVe
   }
 
   // 3. Multiple choice: the letter, or the option text paired with an endorsement.
-  const mc = hidden.finalAnswer.match(/^\s*(?:\(|option\s+|choice\s+)?([A-Ea-e])(?:[).:]|\s|$)\s*(.*)$/i);
+  const mc0 = hidden.finalAnswer.match(/^\s*(?:\(|option\s+|choice\s+)?([A-Ea-e])(?:[).:]|\s|$)\s*(.*)$/i);
+  // "d = 4" is a result for a variable called d, not the choice D.
+  const mc = mc0 && !/^[=<>]/.test(mc0[2] ?? '') ? mc0 : null;
   if (mc) {
     const L = mc[1].toUpperCase();
     const letterRes = [
@@ -98,7 +135,7 @@ export function deterministicLeak(message: string, hidden: SolverResult): LeakVe
   }
 
   // 4. Solution code: any substantial line, or several solution-specific identifiers in code-like text.
-  if (LOOKS_LIKE_CODE.test(hidden.finalAnswer)) {
+  if (answerIsCode) {
     for (const line of hidden.finalAnswer.split('\n')) {
       const l = normalize(line);
       if (l.length >= 10 && !problem.includes(l) && msg.includes(l)) return { leaks: true, reason: 'contains a line of the solution code' };
@@ -112,8 +149,11 @@ export function deterministicLeak(message: string, hidden: SolverResult): LeakVe
   }
 
   // 5. Distinctive key phrases (intermediate results, key insight wording).
+  // (The name of the method or concept isn't a secret: "node voltage analysis" is exactly what a good hint says.)
+  const topics = [...(hidden.conceptTags ?? []), hidden.problemKind ?? ''].map(normalize).filter((t) => t.length >= 3);
   for (const p of hidden.answerKeyPhrases) {
     const np = normalize(p);
+    if (topics.some((t) => np === t || (np.length <= t.length + 4 && t.includes(np)))) continue;
     if (np.length >= 4 && !problem.includes(np) && msg.includes(np)) return { leaks: true, reason: `reveals "${p}"` };
   }
 

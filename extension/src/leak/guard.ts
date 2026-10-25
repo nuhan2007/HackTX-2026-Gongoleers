@@ -1,6 +1,6 @@
-// Every tutor message passes through here: draft → deterministic check → Gemini judge.
+// Every tutor message passes through here: draft → deterministic check → model judge.
 // A rejected draft is regenerated up to twice, then we fall back to a safe generic question.
-import { GeminiError, type GeminiCtx } from '../ai/geminiClient';
+import { LlmError, type LlmCtx } from '../ai/llmClient';
 import { FALLBACK_QUESTIONS } from '../ai/prompts';
 import { judgeLeak, tutorTurn, type TutorTurnArgs } from '../ai/tutor';
 import type { HintLevel, SolverResult, TutorTurn } from '../shared/types';
@@ -17,8 +17,8 @@ export interface GuardedTurn {
 
 /** Injected so the eval can count drafts; the extension uses the real calls. */
 export interface GuardDeps {
-  draft: (ctx: GeminiCtx, a: TutorTurnArgs) => Promise<TutorTurn>;
-  judge: (ctx: GeminiCtx, hidden: SolverResult, message: string) => Promise<LeakVerdict>;
+  draft: (ctx: LlmCtx, a: TutorTurnArgs) => Promise<TutorTurn>;
+  judge: (ctx: LlmCtx, hidden: SolverResult, message: string) => Promise<LeakVerdict>;
 }
 const realDeps: GuardDeps = { draft: tutorTurn, judge: judgeLeak };
 
@@ -28,7 +28,7 @@ export function fallbackQuestion(level: HintLevel, seed = Date.now()): string {
 }
 
 /** Checks one message (deterministic first, then the judge). Fails closed if the judge errors. */
-export async function checkMessage(ctx: GeminiCtx, hidden: SolverResult, message: string, deps = realDeps) {
+export async function checkMessage(ctx: LlmCtx, hidden: SolverResult, message: string, deps = realDeps) {
   const det = deterministicLeak(message, hidden);
   if (det.leaks) return { verdict: det, by: 'deterministic' as const };
   try {
@@ -39,7 +39,7 @@ export async function checkMessage(ctx: GeminiCtx, hidden: SolverResult, message
   }
 }
 
-export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps = realDeps): Promise<GuardedTurn> {
+export async function guardedTutorTurn(ctx: LlmCtx, args: TutorTurnArgs, deps = realDeps): Promise<GuardedTurn> {
   const attempts: GuardedTurn['attempts'] = [];
   let leakFeedback: string | undefined;
   let lastTurn: TutorTurn | null = null;
@@ -49,8 +49,9 @@ export async function guardedTutorTurn(ctx: GeminiCtx, args: TutorTurnArgs, deps
     try {
       draft = await deps.draft(ctx, { ...args, leakFeedback });
     } catch (e) {
-      // Auth/rate errors should surface to the UI; timeouts and the rest fall back to a generic question.
-      if (e instanceof GeminiError && (e.kind === 'auth' || e.kind === 'network')) throw e;
+      // Auth, network and "no such model" errors should surface to the UI (a generic question would hide a broken
+      // setup); timeouts and the rest fall back to a generic question.
+      if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'network' || e.status === 404)) throw e;
       break;
     }
     lastTurn = draft;

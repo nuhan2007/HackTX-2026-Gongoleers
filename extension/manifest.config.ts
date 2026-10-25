@@ -3,11 +3,11 @@ import pkg from './package.json';
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Gongo — Stuck? Let\'s think it through',
-  description: 'Notices when you\'re stuck, asks the question that gets you moving, and never gives you the answer.',
+  name: 'myTA.tech',
+  description: 'Your pixel study buddy: notices when you\'re stuck, flags mistakes the moment you make them, and never gives you the answer.',
   version: pkg.version,
-  icons: { 16: 'icons/icon16.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' },
-  action: { default_title: 'Open Gongo' },
+  icons: { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' },
+  action: { default_title: 'Open myTA' },
   background: { service_worker: 'src/background/index.ts', type: 'module' },
   side_panel: { default_path: 'src/sidepanel/index.html' },
   options_page: 'src/options/index.html',
@@ -16,6 +16,7 @@ export default defineManifest({
     '<all_urls>',
     'https://generativelanguage.googleapis.com/*',
     'https://serpapi.com/*',
+    'https://i.ytimg.com/*',
   ],
   content_scripts: [
     { matches: ['<all_urls>'], js: ['src/content/index.tsx'], all_frames: true, run_at: 'document_idle' },
@@ -29,5 +30,4 @@ export default defineManifest({
   content_security_policy: {
     extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
   },
-  web_accessible_resources: [{ resources: ['sprite/*'], matches: ['<all_urls>'] }],
 });
