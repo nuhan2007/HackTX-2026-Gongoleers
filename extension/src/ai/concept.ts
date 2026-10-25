@@ -1,11 +1,11 @@
 import type { ChatMessage, SolverResult } from '../shared/types';
-import { generateJson, type GeminiCtx } from './geminiClient';
+import { generateJson, type LlmCtx } from './llmClient';
 import { CONCEPT_SYSTEM } from './prompts';
 import { CONCEPT_SCHEMA } from './schemas';
 
 /** Names the missing concept and a concept-level search query (never the problem itself). */
 export async function missingConcept(
-  ctx: GeminiCtx,
+  ctx: LlmCtx,
   hidden: SolverResult,
   history: ChatMessage[],
   hint: string,
@@ -17,15 +17,19 @@ export async function missingConcept(
       system: CONCEPT_SYSTEM,
       parts: [
         {
-          text: `Concept tags from the answer key: ${hidden.conceptTags.join(', ')}\nTutor's guess at the missing prerequisite: ${hint || '(none)'}\nRecent conversation:\n${history
+          text: `Subject: ${hidden.domain ?? 'unknown'}${hidden.problemKind ? ` (${hidden.problemKind})` : ''}\nConcept tags from the answer key: ${hidden.conceptTags.join(', ')}\nTutor's guess at the missing prerequisite: ${hint || '(none)'}\nRecent hints shown:\n${history
             .slice(-6)
             .map((m) => `${m.role}: ${m.text}`)
             .join('\n')}`,
         },
       ],
       schema: CONCEPT_SCHEMA,
+      schemaName: 'missing_concept',
+      kind: 'concept',
+      effort: 'minimal',
+      maxTokens: 800,
       temperature: 0.2,
-      timeoutMs: 10_000,
+      timeoutMs: 25_000,
     });
   } catch {
     r = { concept: fallbackConcept, query: `${fallbackConcept} explained` };

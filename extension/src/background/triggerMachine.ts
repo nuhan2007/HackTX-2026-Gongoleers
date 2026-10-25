@@ -1,5 +1,10 @@
 // IDLE → RISING → CONFUSED → COOLDOWN → IDLE. Timers are absolute timestamps so the
 // state survives a service-worker restart without drifting.
+//
+// The one rule that decides when the sprite appears: the confusion score stays AT OR ABOVE the threshold for
+// `durationSec` seconds in a row. The timer starts the moment the score reaches the threshold and starts over if
+// it drops below it, even for a moment (the score is already smoothed, so it doesn't jitter). Once the sprite is
+// showing, it only goes away again when the score falls clearly (HYSTERESIS) below the threshold.
 import { HYSTERESIS, type TriggerConfig } from '../shared/constants';
 import type { TriggerPhase } from '../shared/types';
 
@@ -44,8 +49,8 @@ export function stepTrigger(
       return { state: s, fired: false };
 
     case 'rising':
-      // Hysteresis: a dip between threshold-HYSTERESIS and threshold keeps the timer running.
-      if (score < cfg.threshold - HYSTERESIS) return { state: { ...s, phase: 'idle', aboveSince: null }, fired: false };
+      // Any dip below the threshold starts the count over.
+      if (score < cfg.threshold) return { state: { ...s, phase: 'idle', aboveSince: null }, fired: false };
       if (s.aboveSince !== null && now - s.aboveSince >= cfg.durationSec * 1000) {
         return { state: { ...s, phase: 'confused', confusedAt: now }, fired: true };
       }
@@ -61,6 +66,14 @@ export function stepTrigger(
 /** Called when the student dismisses the nudge or finishes a tutor session. */
 export function enterCooldown(s: TriggerState, now: number, cfg: TriggerConfig): TriggerState {
   return { ...s, phase: 'cooldown', aboveSince: null, confusedAt: null, cooldownUntil: now + cfg.cooldownSec * 1000 };
+}
+
+/** How the timer stands, in words the side panel can show: seconds above the threshold so far, out of the seconds needed. */
+export function triggerProgress(s: TriggerState, now: number): { aboveSec: number | null; cooldownLeftSec: number } {
+  return {
+    aboveSec: s.phase === 'rising' && s.aboveSince !== null ? Math.max(0, Math.floor((now - s.aboveSince) / 1000)) : null,
+    cooldownLeftSec: s.phase === 'cooldown' ? Math.max(0, Math.ceil((s.cooldownUntil - now) / 1000)) : 0,
+  };
 }
 
 /** Dev-only "Force trigger": jump straight to confused. */

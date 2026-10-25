@@ -1,11 +1,11 @@
 {
-  "name": "gongo-extension",
+  "name": "myta-extension",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build -c vite.content.config.ts && node scripts/finalize-manifest.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "evaluate": "tsx tools/evaluate.ts",

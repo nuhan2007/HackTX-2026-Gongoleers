@@ -1,7 +1,13 @@
-/** Sliding-window limiter so a chatty session can't burn through the Gemini quota. */
+/** Sliding-window limiter so a chatty session can't burn through the API quota. */
 export class RateLimiter {
   private calls: number[] = [];
   constructor(private maxPerWindow: number, private windowMs = 60_000) {}
+
+  /** Calls still available in the current window (background work uses this to leave room for the student's own questions). */
+  remaining(): number {
+    const now = Date.now();
+    return this.maxPerWindow - this.calls.filter((t) => now - t < this.windowMs).length;
+  }
 
   /** Waits up to `maxWaitMs` for a slot, otherwise throws. */
   async acquire(maxWaitMs = 5000): Promise<void> {

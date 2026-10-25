@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialEngineState, step, type EngineState } from '../src/background/confusionEngine';
 import { EngineStore, type KV } from '../src/background/engineStore';
-import { enterCooldown, initialTriggerState, stepTrigger } from '../src/background/triggerMachine';
+import { enterCooldown, initialTriggerState, stepTrigger, triggerProgress } from '../src/background/triggerMachine';
 import { NORMAL_TRIGGER } from '../src/shared/constants';
 import type { EngineInput, FaceReading, PageSignals, Signal } from '../src/shared/types';
 
@@ -85,9 +85,54 @@ describe('confusionEngine fusion', () => {
   });
 });
 
+describe('the sprite rule as the setup sliders set it', () => {
+  const ctx = { enabled: true, snoozedUntil: 0 };
+
+  it('the shipped defaults are a threshold of 40 held for 5 seconds, with a short rest after a nudge', () => {
+    expect(NORMAL_TRIGGER).toEqual({ threshold: 40, durationSec: 5, cooldownSec: 30 });
+  });
+
+  it('with 5 seconds, fires on the fifth second at or above the threshold (and not on the fourth)', () => {
+    let s = initialTriggerState();
+    const fired: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const r = stepTrigger(s, 41, i * 1000, NORMAL_TRIGGER, ctx);
+      s = r.state;
+      if (r.fired) fired.push(i);
+    }
+    expect(fired).toEqual([5]);
+  });
+
+  it('a score of 30 against a threshold of 30 counts', () => {
+    let s = initialTriggerState();
+    let fired = false;
+    for (let i = 0; i < 8; i++) {
+      const r = stepTrigger(s, 30, i * 1000, { threshold: 30, durationSec: 5, cooldownSec: 30 }, ctx);
+      s = r.state;
+      fired ||= r.fired;
+    }
+    expect(fired).toBe(true);
+  });
+
+  it('can fire again after the rest, so the sprite keeps coming back for someone who stays confused', () => {
+    let s = initialTriggerState();
+    const fired: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      const r = stepTrigger(s, 60, i * 1000, NORMAL_TRIGGER, ctx);
+      s = r.state;
+      if (r.fired) {
+        fired.push(i);
+        s = enterCooldown(s, i * 1000, NORMAL_TRIGGER); // they dismissed it
+      }
+    }
+    expect(fired.length).toBeGreaterThanOrEqual(3);
+    expect(fired[1] - fired[0]).toBe(30 + 5);
+  });
+});
+
 describe('triggerMachine', () => {
   const ctx = { enabled: true, snoozedUntil: 0 };
-  const cfg = NORMAL_TRIGGER; // 60 for 45s, cooldown 180s
+  const cfg = { threshold: 60, durationSec: 45, cooldownSec: 180 }; // pinned here: these tests are about the rule, not the defaults
 
   function drive(scores: number[], s = initialTriggerState(), t0 = 0) {
     let fired = -1;
@@ -105,14 +150,27 @@ describe('triggerMachine', () => {
     expect(s.phase).toBe('confused');
   });
 
-  it('keeps the timer through small dips (hysteresis)', () => {
-    const scores = [...Array(20).fill(70), ...Array(5).fill(55), ...Array(30).fill(70)];
-    expect(drive(scores).fired).toBe(45);
+  it('starts the count when the score reaches the threshold, and at exactly the threshold', () => {
+    expect(drive([10, 20, ...Array(60).fill(60)]).fired).toBe(2 + 45);
   });
 
-  it('resets on a big dip', () => {
-    const scores = [...Array(20).fill(70), 40, ...Array(30).fill(70)];
-    expect(drive(scores).fired).toBe(-1);
+  it('starts over if the score drops below the threshold, even briefly', () => {
+    // 40 s above (not enough), one tick at 59, then the count starts again from zero.
+    expect(drive([...Array(40).fill(70), 59, ...Array(40).fill(70)]).fired).toBe(-1);
+    expect(drive([...Array(40).fill(70), 59, ...Array(50).fill(70)]).fired).toBe(40 + 1 + 45);
+  });
+
+  it('keeps the sprite up through a small dip, and hides it only once the score is clearly lower', () => {
+    let { s } = drive(Array(46).fill(70));
+    expect(s.phase).toBe('confused');
+    expect(stepTrigger(s, 55, 50_000, cfg, ctx).state.phase).toBe('confused');
+    expect(stepTrigger(s, 45, 50_000, cfg, ctx).state.phase).toBe('cooldown');
+  });
+
+  it('reports how long the score has been above the threshold', () => {
+    const { s } = drive(Array(20).fill(70)); // ticks at t = 0..19 s
+    expect(triggerProgress(s, 19_000).aboveSec).toBe(19);
+    expect(triggerProgress(initialTriggerState(), 19_000).aboveSec).toBeNull();
   });
 
   it('does not fire again during cooldown', () => {
@@ -155,7 +213,7 @@ describe('engineStore', () => {
     for (let i = 0; i < 30; i++) {
       const r = step(engine, input(i * 1000));
       engine = r.state;
-      trigger = stepTrigger(trigger, r.output.score, i * 1000, { ...NORMAL_TRIGGER, threshold: 30 }, ctxOn).state;
+      trigger = stepTrigger(trigger, r.output.score, i * 1000, { threshold: 30, durationSec: 45, cooldownSec: 180 }, ctxOn).state;
       await store.save({ engine, trigger });
     }
 

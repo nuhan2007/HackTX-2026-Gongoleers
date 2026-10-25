@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { send, type Stats as StatsData } from '../shared/messages';
-import { fmtDuration } from './Summary';
+import { fmtDuration } from './format';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 

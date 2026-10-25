@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Circuits Lab 3 · Two-node voltage analysis</title>
+    <!--
+      A harder demo problem for myTA: a figure the page text does not describe (the schematic is an SVG), two unknown node voltages and a
+      current source. Write the KCL equations on /sketch.html in another window, then enter V1 and V2 here. (Answer: V1 = 6 V, V2 = 12 V.)
+    -->
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; background: #fbfaf7; margin: 0; color: #1d1d1f; }
+      main { max-width: 780px; margin: 24px auto; padding: 0 16px; }
+      .problem { background: #fff; border: 1px solid #e2ded3; border-radius: 8px; padding: 20px 24px; }
+      svg { width: 100%; max-width: 600px; display: block; margin: 12px auto; }
+      svg text { font: 14px system-ui, sans-serif; fill: #1d1d1f; }
+      .answers { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+      input { font: 16px ui-monospace, monospace; padding: 6px 8px; width: 96px; }
+      button { font: 600 14px system-ui; padding: 7px 14px; border-radius: 6px; border: 1px solid #2d6a4f; background: #2d6a4f; color: #fff; cursor: pointer; }
+      .feedback { margin-top: 10px; font-weight: 600; min-height: 22px; }
+      .incorrect { color: #b3261e; }
+      .correct { color: #1b7f3b; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>EE 101 · Lab 3</h1>
+      <div class="problem" id="problem-3" data-question="Problem 3">
+        <h2>Problem 3</h2>
+        <p>
+          Use node-voltage analysis on the circuit shown to find the node voltages V<sub>1</sub> and V<sub>2</sub> (in volts), with the bottom wire as the
+          reference node.
+        </p>
+        <svg viewBox="0 0 600 270" role="img" aria-label="A two-node resistor circuit with a voltage source and a current source">
+          <g stroke="#1d1d1f" stroke-width="2" fill="none">
+            <!-- ground rail and the source on the left -->
+            <path d="M60 50 V222 H540" />
+            <circle cx="60" cy="136" r="20" />
+            <!-- R1: source to node 1 -->
+            <path d="M60 50 H110 l8 -10 l16 20 l16 -20 l16 20 l16 -20 l8 10 H230" />
+            <!-- R2: node 1 to node 2 -->
+            <path d="M230 50 H290 l8 -10 l16 20 l16 -20 l16 20 l16 -20 l8 10 H420" />
+            <!-- R3: node 1 to ground -->
+            <path d="M230 50 V90 l-10 8 l20 16 l-20 16 l20 16 l-10 8 V222" />
+            <!-- R4: node 2 to ground -->
+            <path d="M420 50 V90 l-10 8 l20 16 l-20 16 l20 16 l-10 8 V222" />
+            <!-- current source into node 2 -->
+            <path d="M420 50 H520 V100 M520 172 V222" />
+            <circle cx="520" cy="136" r="36" />
+            <path d="M520 160 V112 M510 124 l10 -14 l10 14" />
+          </g>
+          <circle cx="230" cy="50" r="5" fill="#1d1d1f" />
+          <circle cx="420" cy="50" r="5" fill="#1d1d1f" />
+          <text x="40" y="130">+</text><text x="40" y="152">−</text>
+          <text x="6" y="141">5 V</text>
+          <text x="128" y="28">R1 = 1 kΩ</text>
+          <text x="318" y="28">R2 = 2 kΩ</text>
+          <text x="238" y="40">1</text>
+          <text x="428" y="40">2</text>
+          <text x="244" y="150">R3 = 3 kΩ</text>
+          <text x="434" y="150">R4 = 3 kΩ</text>
+          <text x="545" y="141">7 mA</text>
+          <text x="270" y="250">ground (0 V)</text>
+        </svg>
+        <div class="answers">
+          <label>V<sub>1</sub> = <input id="v1" autocomplete="off" /> V</label>
+          <label>V<sub>2</sub> = <input id="v2" autocomplete="off" /> V</label>
+          <button id="check">Submit</button>
+        </div>
+        <div class="feedback" aria-live="polite"></div>
+      </div>
+    </main>
+    <script>
+      const fb = document.querySelector('.feedback');
+      document.getElementById('check').addEventListener('click', () => {
+        const v1 = parseFloat(document.getElementById('v1').value);
+        const v2 = parseFloat(document.getElementById('v2').value);
+        fb.textContent = '';
+        fb.className = 'feedback';
+        setTimeout(() => {
+          const ok = Math.abs(v1 - 6) < 0.05 && Math.abs(v2 - 12) < 0.05;
+          fb.className = 'feedback ' + (ok ? 'correct' : 'incorrect');
+          fb.textContent = ok ? 'Correct!' : 'Not quite. Try again.';
+        }, 250);
+      });
+    </script>
+  </body>
+</html>

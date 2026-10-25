@@ -114,3 +114,11 @@ label { display: block; }
 .chip.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); }
 .chip.good { background: color-mix(in srgb, var(--good) 18%, transparent); }
 .error { color: var(--bad); }
+
+/* the myTA mark */
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-text strong { font-size: 17px; letter-spacing: -0.02em; }
+.brand-text .tld { color: var(--ink-3); font-weight: 600; }
+.brand-text .tagline { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.book-logo { flex: none; image-rendering: pixelated; filter: drop-shadow(0 2px 3px rgba(84, 52, 28, 0.28)); }

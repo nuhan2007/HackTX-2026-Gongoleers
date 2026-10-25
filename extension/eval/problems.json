@@ -1,32 +1,167 @@
 [
-  { "id": "m1", "subject": "math", "problem": "Solve for x: 3x - 7 = 2x + 5." },
-  { "id": "m2", "subject": "math", "problem": "Find the derivative of f(x) = sin(3x^2)." },
-  { "id": "m3", "subject": "math", "problem": "Evaluate the integral of 2x * e^(x^2) dx from 0 to 1." },
-  { "id": "m4", "subject": "math", "problem": "A rectangle has a perimeter of 36 cm and its length is twice its width. What is its area?" },
-  { "id": "m5", "subject": "math", "problem": "What is the probability of rolling a sum of 8 with two fair six-sided dice? Give your answer as a fraction." },
-  { "id": "m6", "subject": "math", "problem": "Factor completely: x^2 - 5x - 14." },
-  { "id": "m7", "subject": "math", "problem": "Find lim (x→0) of (1 - cos x) / x^2." },
-  { "id": "m8", "subject": "math", "problem": "Which of the following is the slope of the line through (2, 3) and (6, 11)? (A) 1 (B) 2 (C) 4 (D) 8" },
-  { "id": "m9", "subject": "math", "problem": "Solve the system: x + y = 10 and x - y = 4. What is x times y?" },
-  { "id": "m10", "subject": "math", "problem": "What is log base 2 of 64, plus log base 3 of 81?" },
-  { "id": "j1", "subject": "java", "problem": "Write a Java method public static int countEvens(int[] nums) that returns how many elements of nums are even." },
-  { "id": "j2", "subject": "java", "problem": "What is printed by: int x = 7; int y = x++ + ++x; System.out.println(y); ?" },
-  { "id": "j3", "subject": "java", "problem": "This loop throws ArrayIndexOutOfBoundsException: for (int i = 0; i <= arr.length; i++) { sum += arr[i]; } Fix it." },
-  { "id": "j4", "subject": "java", "problem": "Write a Java method public static String reverse(String s) that returns s reversed, without using StringBuilder.reverse()." },
-  { "id": "j5", "subject": "java", "problem": "What is the value of 17 / 5 * 5 + 17 % 5 in Java (all ints)?" },
-  { "id": "j6", "subject": "java", "problem": "Given ArrayList<Integer> list = [4, 8, 15, 16]; after list.remove(1); list.add(1, 23); what does list contain?" },
-  { "id": "j7", "subject": "java", "problem": "Write a recursive Java method public static int sumDigits(int n) that returns the sum of the digits of a non-negative n." },
-  { "id": "j8", "subject": "java", "problem": "How many times does \"hi\" print? for (int i = 0; i < 5; i++) for (int j = i; j < 5; j++) System.out.println(\"hi\");" },
-  { "id": "p1", "subject": "physics", "problem": "A ball is thrown straight up at 15 m/s. Using g = 9.8 m/s^2, what maximum height does it reach?" },
-  { "id": "p2", "subject": "physics", "problem": "A 4 kg box is pushed with 20 N across a floor with coefficient of kinetic friction 0.3. What is its acceleration? Use g = 9.8 m/s^2." },
-  { "id": "p3", "subject": "physics", "problem": "A car goes from 0 to 27 m/s in 9 s. How far does it travel in that time, assuming constant acceleration?" },
-  { "id": "p4", "subject": "physics", "problem": "A 2 kg cart moving at 6 m/s collides and sticks to a 1 kg cart at rest. What is their final speed?" },
-  { "id": "p5", "subject": "physics", "problem": "A spring with k = 200 N/m is compressed 0.1 m. How much elastic potential energy is stored?" },
-  { "id": "p6", "subject": "physics", "problem": "A projectile is launched horizontally at 12 m/s from a 20 m cliff. How far from the base does it land? Use g = 9.8 m/s^2." },
-  { "id": "c1", "subject": "circuits", "problem": "Two resistors of 6 Ω and 3 Ω are in parallel, connected in series with a 4 Ω resistor across a 12 V source. What is the total current?" },
-  { "id": "c2", "subject": "circuits", "problem": "Using node voltage analysis: a 10 V source connects through 2 kΩ to node A; node A connects to ground through 3 kΩ and through 6 kΩ. What is the voltage at node A?" },
-  { "id": "c3", "subject": "circuits", "problem": "A 9 V battery drives a 1.5 kΩ resistor. How much power does the resistor dissipate, in milliwatts?" },
-  { "id": "r1", "subject": "reading", "problem": "Passage: 'Maria watered the wilting plant every morning, even after her brother laughed that it was already dead. By spring, three green shoots had appeared.' Which word best describes Maria? (A) careless (B) persistent (C) jealous (D) impatient" },
-  { "id": "r2", "subject": "reading", "problem": "In the sentence 'The committee's decision was met with a cacophony of objections,' what does 'cacophony' most nearly mean? (A) a harsh mixture of sounds (B) a quiet agreement (C) a written report (D) a formal vote" },
-  { "id": "r3", "subject": "reading", "problem": "Passage: 'The new bridge cut commute times in half, but nearby shop owners reported fewer customers stopping by.' What is the main tension the passage describes?" }
+  {
+    "id": "m1",
+    "subject": "math",
+    "problem": "Solve for x: 3x - 7 = 2x + 5."
+  },
+  {
+    "id": "m2",
+    "subject": "math",
+    "problem": "Find the derivative of f(x) = sin(3x^2)."
+  },
+  {
+    "id": "m3",
+    "subject": "math",
+    "problem": "Evaluate the integral of 2x * e^(x^2) dx from 0 to 1."
+  },
+  {
+    "id": "m4",
+    "subject": "math",
+    "problem": "A rectangle has a perimeter of 36 cm and its length is twice its width. What is its area?"
+  },
+  {
+    "id": "m5",
+    "subject": "math",
+    "problem": "What is the probability of rolling a sum of 8 with two fair six-sided dice? Give your answer as a fraction."
+  },
+  {
+    "id": "m6",
+    "subject": "math",
+    "problem": "Factor completely: x^2 - 5x - 14."
+  },
+  {
+    "id": "m7",
+    "subject": "math",
+    "problem": "Find lim (x→0) of (1 - cos x) / x^2."
+  },
+  {
+    "id": "m8",
+    "subject": "math",
+    "problem": "Which of the following is the slope of the line through (2, 3) and (6, 11)? (A) 1 (B) 2 (C) 4 (D) 8"
+  },
+  {
+    "id": "m9",
+    "subject": "math",
+    "problem": "Solve the system: x + y = 10 and x - y = 4. What is x times y?"
+  },
+  {
+    "id": "m10",
+    "subject": "math",
+    "problem": "What is log base 2 of 64, plus log base 3 of 81?"
+  },
+  {
+    "id": "j1",
+    "subject": "java",
+    "problem": "Write a Java method public static int countEvens(int[] nums) that returns how many elements of nums are even."
+  },
+  {
+    "id": "j2",
+    "subject": "java",
+    "problem": "What is printed by: int x = 7; int y = x++ + ++x; System.out.println(y); ?"
+  },
+  {
+    "id": "j3",
+    "subject": "java",
+    "problem": "This loop throws ArrayIndexOutOfBoundsException: for (int i = 0; i <= arr.length; i++) { sum += arr[i]; } Fix it."
+  },
+  {
+    "id": "j4",
+    "subject": "java",
+    "problem": "Write a Java method public static String reverse(String s) that returns s reversed, without using StringBuilder.reverse()."
+  },
+  {
+    "id": "j5",
+    "subject": "java",
+    "problem": "What is the value of 17 / 5 * 5 + 17 % 5 in Java (all ints)?"
+  },
+  {
+    "id": "j6",
+    "subject": "java",
+    "problem": "Given ArrayList<Integer> list = [4, 8, 15, 16]; after list.remove(1); list.add(1, 23); what does list contain?"
+  },
+  {
+    "id": "j7",
+    "subject": "java",
+    "problem": "Write a recursive Java method public static int sumDigits(int n) that returns the sum of the digits of a non-negative n."
+  },
+  {
+    "id": "j8",
+    "subject": "java",
+    "problem": "How many times does \"hi\" print? for (int i = 0; i < 5; i++) for (int j = i; j < 5; j++) System.out.println(\"hi\");"
+  },
+  {
+    "id": "p1",
+    "subject": "physics",
+    "problem": "A ball is thrown straight up at 15 m/s. Using g = 9.8 m/s^2, what maximum height does it reach?"
+  },
+  {
+    "id": "p2",
+    "subject": "physics",
+    "problem": "A 4 kg box is pushed with 20 N across a floor with coefficient of kinetic friction 0.3. What is its acceleration? Use g = 9.8 m/s^2."
+  },
+  {
+    "id": "p3",
+    "subject": "physics",
+    "problem": "A car goes from 0 to 27 m/s in 9 s. How far does it travel in that time, assuming constant acceleration?"
+  },
+  {
+    "id": "p4",
+    "subject": "physics",
+    "problem": "A 2 kg cart moving at 6 m/s collides and sticks to a 1 kg cart at rest. What is their final speed?"
+  },
+  {
+    "id": "p5",
+    "subject": "physics",
+    "problem": "A spring with k = 200 N/m is compressed 0.1 m. How much elastic potential energy is stored?"
+  },
+  {
+    "id": "p6",
+    "subject": "physics",
+    "problem": "A projectile is launched horizontally at 12 m/s from a 20 m cliff. How far from the base does it land? Use g = 9.8 m/s^2."
+  },
+  {
+    "id": "c1",
+    "subject": "circuits",
+    "problem": "Two resistors of 6 Ω and 3 Ω are in parallel, connected in series with a 4 Ω resistor across a 12 V source. What is the total current?"
+  },
+  {
+    "id": "c2",
+    "subject": "circuits",
+    "problem": "Using node voltage analysis: a 10 V source connects through 2 kΩ to node A; node A connects to ground through 3 kΩ and through 6 kΩ. What is the voltage at node A?"
+  },
+  {
+    "id": "c3",
+    "subject": "circuits",
+    "problem": "A 9 V battery drives a 1.5 kΩ resistor. How much power does the resistor dissipate, in milliwatts?"
+  },
+  {
+    "id": "r1",
+    "subject": "reading",
+    "problem": "Passage: 'Maria watered the wilting plant every morning, even after her brother laughed that it was already dead. By spring, three green shoots had appeared.' Which word best describes Maria? (A) careless (B) persistent (C) jealous (D) impatient"
+  },
+  {
+    "id": "r2",
+    "subject": "reading",
+    "problem": "In the sentence 'The committee's decision was met with a cacophony of objections,' what does 'cacophony' most nearly mean? (A) a harsh mixture of sounds (B) a quiet agreement (C) a written report (D) a formal vote"
+  },
+  {
+    "id": "r3",
+    "subject": "reading",
+    "problem": "Passage: 'The new bridge cut commute times in half, but nearby shop owners reported fewer customers stopping by.' What is the main tension the passage describes?"
+  },
+  {
+    "id": "e1",
+    "subject": "circuits",
+    "problem": "Node-voltage analysis. A 5 V source is in series with R1 = 1 kΩ and connects to node 1. From node 1, R2 = 2 kΩ goes to node 2 and R3 = 3 kΩ goes to ground. From node 2, R4 = 3 kΩ goes to ground, and a 7 mA current source pushes current from ground into node 2. Find the node voltages V1 and V2."
+  },
+  {
+    "id": "e2",
+    "subject": "circuits",
+    "problem": "Mesh analysis. Two meshes share a 4 Ω resistor. The left mesh has a 12 V source and a 2 Ω resistor; the right mesh has a 6 Ω resistor and a 3 V source opposing the shared current direction. Find the mesh currents i1 and i2 (clockwise)."
+  },
+  {
+    "id": "e3",
+    "subject": "circuits",
+    "problem": "Thevenin equivalent. A 10 V source in series with 2 kΩ feeds node A. From A, a 3 kΩ resistor goes to ground and the load terminals are across that 3 kΩ resistor. Find the Thevenin voltage and Thevenin resistance seen by the load."
+  }
 ]

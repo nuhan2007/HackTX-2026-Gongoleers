@@ -21,7 +21,7 @@ const moment: VideoMoment = {
   end: 220,
   why: 'how the chain rule works',
   concept: 'chain rule',
-  source: 'gemini-video',
+  source: 'metadata',
 };
 
 describe('VideoCache', () => {

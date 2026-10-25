@@ -17,3 +17,24 @@ fieldset:disabled { opacity: 0.5; }
 kbd { font: 12px ui-monospace, monospace; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
 code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
 input[type='checkbox'] { accent-color: var(--brand); }
+.hero { display: flex; flex-direction: column; gap: 8px; padding: 6px 0 2px; }
+.hero .brand-text strong { font-size: 30px; }
+.hero .brand-text .tagline { font-size: 13px; }
+.hero p { max-width: 560px; margin: 0; }
+.studio-grid { display: grid; grid-template-columns: minmax(0, 320px) 1fr; gap: 20px; align-items: start; margin-top: 12px; }
+@media (max-width: 680px) { .studio-grid { grid-template-columns: 1fr; } }
+.crop { display: block; width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 16px; cursor: grab; touch-action: none; border: 1px solid var(--border); background: var(--surface-2); }
+.crop:active { cursor: grabbing; }
+.crop-box { display: flex; flex-direction: column; gap: 8px; }
+.cam-box { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.mirrorcam { width: 100%; max-width: 320px; aspect-ratio: 1; object-fit: cover; border-radius: 16px; transform: scaleX(-1); background: var(--surface-2); }
+.preview { border: 1px solid var(--border); border-radius: 16px; padding: 10px 6px 6px; min-height: 170px; background: radial-gradient(circle at 30% 20%, var(--brand-soft), var(--surface) 70%); transition: opacity 0.2s; }
+.preview.busy { opacity: 0.65; }
+.preview p { text-align: center; margin: 2px 0 0; }
+.dropnote { padding: 30px 14px; border: 2px dashed var(--border); border-radius: 16px; text-align: center; max-width: 320px; }
+input[type='radio'] { accent-color: var(--brand); }
+select { font: inherit; width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+/* a checkbox with a sentence next to it: the box stays beside the first line, not on a line of its own */
+label.row { flex-wrap: nowrap; align-items: flex-start; }
+label.row > input[type='checkbox'], label.row > input[type='radio'] { flex: none; margin-top: 3px; }
+.studio label.row { flex-wrap: wrap; align-items: center; }
